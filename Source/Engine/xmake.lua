@@ -1,0 +1,16 @@
+-- Copyright Seong Woo Lee. All Rights Reserved.
+
+includes("OS")
+includes("Core")
+includes("Window")
+includes("Input")
+includes("RHI")
+
+add_includedirs("../ThirdParty/", { public = true })
+add_includedirs(".", { public = true })
+target("Engine")
+    set_kind("object")
+    set_group("Engine")
+
+    add_includedirs(".", { public = true })
+    add_deps("OS", "Core", "Window", "Input", "RHI")
