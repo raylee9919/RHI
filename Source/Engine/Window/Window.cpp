@@ -1,6 +1,7 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
 #include "Window.h"
+#include "Core/Core_Log.h"
 
 #include <SDL3/SDL.h>
 
@@ -20,6 +21,8 @@ namespace Engine
         window->m_width   = width;
         window->m_height  = height;
 
+        Log("Created Window.");
+
         return window;
     }
 
@@ -30,6 +33,15 @@ namespace Engine
         SDL_DestroyWindow(window->sdl);
 
         delete window;
+    }
+
+    void* Window::GetPlatformWindow()
+    {
+#if PLATFORM_WINDOWS
+        return SDL_GetPointerProperty(SDL_GetWindowProperties(sdl), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+#else
+#  error Undefined platform.
+#endif
     }
 
     bool Window::PollEvents()

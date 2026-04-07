@@ -17,7 +17,8 @@ typedef s16      b16;
 typedef s32      b32;
 typedef s64      b64;
 
-#define CORE_ASSERT(exp) if (!(exp)) { *(volatile int*)0 = 0; }
+#define CORE_ASSERT(exp, ...) if (!(exp)) { *(volatile int*)0 = 0; }
+#define ARRAY_COUNT(arr) (sizeof(arr)/sizeof(arr[0]))
 
 #ifdef _MSC_VER
 #  define FORCE_INLINE __forceinline
@@ -25,15 +26,30 @@ typedef s64      b64;
 #  error Undefined compiler.
 #endif
 
+
 #ifdef PLATFORM_WINDOWS
+// Windows specific
+//
 #  define ENGINE_API __declspec(dllexport)
+
+#include <unknwn.h>
+
+template <typename T>
+FORCE_INLINE void SafeReleaseCOM(T** ppCOM)
+{
+    if (ppCOM)
+    {
+        IUnknown* pCOM = *ppCOM;
+        if (pCOM)
+        {
+            pCOM->Release();
+            *ppCOM = nullptr;
+        }
+    }
+}
+
+
+
 #else
 #  error Undefined platform.
 #endif
-
-FORCE_INLINE void MemoryCopy(void* dst, void *src, auto sz)
-{
-    memcpy(dst, src, sz);
-}
-
-#define ARRAY_COUNT(arr) (sizeof(arr)/sizeof(arr[0]))

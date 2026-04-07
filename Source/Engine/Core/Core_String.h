@@ -10,5 +10,5 @@ namespace Engine
 {
     using String = std::string;
 
-    ENGINE_API void FormatCString(const char** fmt, ...);
+    ENGINE_API int FormatCStringV(char* buf, int len, const char* fmt, va_list args);
 }

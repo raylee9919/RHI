@@ -1,3 +1,4 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-#include "E_String.cpp"
+#include "Core_String.cpp"
+#include "Core_Log.cpp"

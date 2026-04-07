@@ -1,7 +1,9 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
 #include "RHI/D3D12/D3D12_Device.h"
+#include "RHI/D3D12/D3D12_CommandQueue.h"
 #include "Core/Core_Common.h"
+#include "Core/Core_Log.h"
 #include "ThirdParty/DirectX/Include/d3d12.h"
 
 #include <dxgi1_6.h>
@@ -123,6 +125,7 @@ lb_exit:
         // Set
         //
         m_device = device;
+        m_factory = factory6;
 
 
         // Cleanup
@@ -138,14 +141,20 @@ lb_exit:
             adapter1->Release();
             adapter1 = nullptr;
         }
+
+        Log("Created D3D12Device.");
     }
 
     D3D12_Device::~D3D12_Device()
     {
-        if (m_device) 
-        {
-            m_device->Release();
-            m_device = nullptr;
-        }
+        SafeReleaseCOM(&m_device);
+
+        Log("Destroyed D3D12Device.");
+    }
+
+    RHI_CommandQueue* D3D12_Device::CreateCommandQueue(RHI_CommandType type)
+    {
+        RHI_CommandQueue* cmd_queue = new D3D12_CommandQueue(this, type);
+        return cmd_queue;
     }
 }

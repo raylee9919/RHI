@@ -4,6 +4,8 @@
 
 #include "Core/Core_Common.h"
 
+#include <windows.h>
+
 struct SDL_Window;
 
 namespace Engine 
@@ -17,6 +19,8 @@ namespace Engine
             FORCE_INLINE bool IsOpen()   { return (bool)m_running; }
             FORCE_INLINE u32 GetWidth()  { return m_width; }
             FORCE_INLINE u32 GetHeight() { return m_height; }
+
+            void* GetPlatformWindow();
 
             bool PollEvents();
 
