@@ -13,6 +13,15 @@ namespace Engine
         RHI_KIND_VULKAN = 2,
     };
 
+    enum RHI_DescriptorKind
+    {
+        RHI_DESCRIPTOR_KIND_NULL        = 0,
+        RHI_DESCRIPTOR_KIND_CBV_SRV_UAV = 1,
+        RHI_DESCRIPTOR_KIND_SAMPLER     = 2,
+        RHI_DESCRIPTOR_KIND_RTV         = 3,
+        RHI_DESCRIPTOR_KIND_DSV         = 4,
+    };
+
     struct RHI_Device
     {
         RHI_Kind kind;

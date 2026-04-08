@@ -18,6 +18,8 @@ typedef s16             b16;
 typedef s32             b32;
 typedef unsigned int    uint;
 
+#define INTERNAL static
+
 #define CORE_ASSERT(exp, ...) if (!(exp)) { *(volatile int*)0 = 0; }
 #define ARRAY_COUNT(arr) (sizeof(arr)/sizeof(arr[0]))
 

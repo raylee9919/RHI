@@ -18,6 +18,18 @@ extern "C"
 
 namespace Engine
 {
+    INTERNAL D3D12_DESCRIPTOR_HEAP_TYPE ToDX12DescriptorHeapType(RHI_DescriptorKind kind)
+    {
+        switch (kind)
+        {
+            default: CORE_ASSERT(!"invalid default case."); return {};
+            case RHI_DESCRIPTOR_KIND_CBV_SRV_UAV: return D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+            case RHI_DESCRIPTOR_KIND_SAMPLER:     return D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+            case RHI_DESCRIPTOR_KIND_RTV:         return D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+            case RHI_DESCRIPTOR_KIND_DSV:         return D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+        }
+    }
+
     ENGINE_API bool DX12_InitDevice(DX12_Device* device, bool use_debug_layer)
     {
         using namespace Microsoft::WRL;
@@ -68,6 +80,7 @@ namespace Engine
         }
 
         CORE_ASSERT(SUCCEEDED(CreateDXGIFactory2(dxgi_factory_flags, IID_PPV_ARGS(&device->m_factory))), "Failed to create IDXGIFactory.");
+
 
         IDXGIAdapter1* adapter = nullptr;
 
@@ -122,7 +135,7 @@ namespace Engine
         temp_device->Release();
 
         
-        Log("Created DX12 device.");
+        Log("Initted DX12 device.");
         return true;
     }
 
@@ -159,43 +172,49 @@ namespace Engine
         }
     }
 
-    ENGINE_API bool DX12_InitSwapchain(DX12_Device* device, DX12_SwapChain* swap_chain, HWND hwnd, uint width, uint height, uint num_frames)
+    ENGINE_API bool
+    DX12_InitSwapchain(DX12_Device* device, DX12_SwapChain* swap_chain,
+                       DX12_CommandQueue* cmd_queue, HWND hwnd,
+                       uint width, uint height, uint num_frames)
     {
-        if (!device || !swap_chain)
+        if (device && swap_chain && cmd_queue)
         {
+            DXGI_SWAP_CHAIN_DESC1 desc = {
+                .Width = width,
+                .Height = height,
+                .Format = DXGI_FORMAT_R8G8B8A8_UNORM, // @Temporary
+                .Stereo = FALSE, // For some VR voodoo?
+                .SampleDesc = {
+                    .Count = 1, // @Todo: Something related to MSAA?
+                    .Quality = 0,
+                },
+                .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                .BufferCount = num_frames,
+                .Scaling = DXGI_SCALING_STRETCH, // @Temporary: Sure?
+                .SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+                .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
+                .Flags = 0, // @Temporary: Tearing...?
+            };
+
+            // Those are how miniengine did.
+            DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc = {
+                .ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+                .Scaling = DXGI_MODE_SCALING_UNSPECIFIED,
+                .Windowed = TRUE
+            };
+
+            if (FAILED(device->m_factory->CreateSwapChainForHwnd(cmd_queue->m_queue, hwnd, &desc, &fullscreen_desc, nullptr, &swap_chain->m_swap_chain)))
+            {
+                return false;
+            }
+
+            return true;
+        }
+        else
+        {
+            Log("Null detected. Abort initting DX12 swap chain.");
             return false;
         }
-
-        DXGI_SWAP_CHAIN_DESC1 desc = {
-            .Width = width,
-            .Height = height,
-            .Format = DXGI_FORMAT_R8G8B8A8_UNORM, // @Temporary
-            .Stereo = FALSE, // For some VR voodoo?
-            .SampleDesc = {
-                .Count = 1, // @Todo: Something related to MSAA?
-                .Quality = 0,
-            },
-            .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            .BufferCount = num_frames,
-            .Scaling = DXGI_SCALING_ASPECT_RATIO_STRETCH, // @Temporary: Sure?
-            .SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
-            .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
-            .Flags = 0, // @Temporary: Tearing...?
-        };
-
-        // Those are how miniengine did.
-        DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc = {
-            .ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-            .Scaling = DXGI_MODE_SCALING_UNSPECIFIED,
-            .Windowed = TRUE
-        };
-
-        if (FAILED(device->m_factory->CreateSwapChainForHwnd(device->m_device, hwnd, &desc, &fullscreen_desc, nullptr, &swap_chain->m_swap_chain)))
-        {
-            return false;
-        }
-
-        return true;
     }
 
     ENGINE_API void DX12_DeinitSwapchain(DX12_SwapChain* swap_chain)
@@ -207,13 +226,47 @@ namespace Engine
         }
     }
 
-    ENGINE_API bool DX12_InitDescriptorHeap(DX12_DescriptorHeap* descriptor_heap)
+    ENGINE_API bool DX12_InitDescriptorHeap(DX12_Device* device, DX12_DescriptorHeap* descriptor_heap, uint num_descriptors, RHI_DescriptorKind kind)
     {
-        return true;
+        if (device && descriptor_heap)
+        {
+            D3D12_DESCRIPTOR_HEAP_DESC desc = {
+                .Type = ToDX12DescriptorHeapType(kind),
+                .NumDescriptors = num_descriptors,
+                .NodeMask = 0
+            };
+
+            // "This flag only applies to CBV/SRV/UAV descriptor heaps, and sampler descriptor heaps." - MSDN
+            if (kind == RHI_DESCRIPTOR_KIND_CBV_SRV_UAV || kind == RHI_DESCRIPTOR_KIND_SAMPLER)
+            {
+                desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+            }
+
+            if (FAILED(device->m_device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&descriptor_heap->m_descriptor_heap))))
+            {
+                Log("CreateDescriptorHeap() failed.");
+                return false;
+            }
+
+            Log("Initted DX12 descriptor heap.");
+            return true;
+        }
+        else
+        {
+            Log("Null detected. Failed initting DX12 descriptor heap.");
+            return false;
+        }
     }
 
     ENGINE_API void DX12_DeinitDescriptorHeap(DX12_DescriptorHeap* descriptor_heap)
     {
+        if (descriptor_heap)
+        {
+            SafeReleaseCOM(&descriptor_heap->m_descriptor_heap);
+        }
+        else
+        {
+            Log("Null detected. Failed deinitting DX12 descriptor heap.");
+        }
     }
 }
-

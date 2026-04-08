@@ -46,12 +46,12 @@ namespace Engine
     ENGINE_API bool DX12_InitDevice(DX12_Device* device, bool use_debug_layer);
     ENGINE_API void DX12_DeinitDevice(DX12_Device* device);
 
-    ENGINE_API bool DX12_InitCommandQueue(DX12_CommandQueue* cmd_queue);
+    ENGINE_API bool DX12_InitCommandQueue(DX12_Device*device, DX12_CommandQueue* cmd_queue);
     ENGINE_API void DX12_DeinitCommandQueue(DX12_CommandQueue* cmd_queue);
 
-    ENGINE_API bool DX12_InitSwapchain(DX12_SwapChain* swap_chain);
-    ENGINE_API void DX12_DeinitSwapchain(DX12_SwapChain* swap_chain);
-
-    ENGINE_API bool DX12_InitDescriptorHeap(DX12_DescriptorHeap* descriptor_heap);
+    ENGINE_API bool DX12_InitDescriptorHeap(DX12_Device* device, DX12_DescriptorHeap* descriptor_heap, uint num_descriptors, RHI_DescriptorKind kind);
     ENGINE_API void DX12_DeinitDescriptorHeap(DX12_DescriptorHeap* descriptor_heap);
+
+    ENGINE_API bool DX12_InitSwapchain(DX12_Device* device, DX12_SwapChain* swap_chain, DX12_CommandQueue* cmd_queue, HWND hwnd, uint width, uint height, uint num_frames);
+    ENGINE_API void DX12_DeinitSwapchain(DX12_SwapChain* swap_chain);
 }

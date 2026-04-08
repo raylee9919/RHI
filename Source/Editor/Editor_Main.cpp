@@ -15,6 +15,20 @@ int ENGINE_MAIN(int argc, const char** argv)
     DX12_Device* device = new DX12_Device;
     DX12_InitDevice(device, true);
 
+    DX12_CommandQueue* cmd_queue = new DX12_CommandQueue;
+    DX12_InitCommandQueue(device, cmd_queue);
+
+    HWND hwnd = (HWND)window->GetPlatformWindow();
+    uint width  = 1920;
+    uint height = 1080;
+    uint num_frames = 3;
+    DX12_SwapChain* swap_chain = new DX12_SwapChain;
+    DX12_InitSwapchain(device, swap_chain, cmd_queue, hwnd, width, height, num_frames);
+
+    DX12_DescriptorHeap* rtv_desc_heap = new DX12_DescriptorHeap;
+    DX12_InitDescriptorHeap(device, rtv_desc_heap, 128, RHI_DESCRIPTOR_KIND_CBV_SRV_UAV);
+
+
     while (window->IsOpen()) 
     {
         window->PollEvents();
