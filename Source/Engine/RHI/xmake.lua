@@ -1,6 +1,6 @@
 -- Copyright Seong Woo Lee. All Rights Reserved.
 
-includes("D3D12")
+includes("DX12")
 
 target("RHI")
     set_kind("object")
@@ -10,4 +10,4 @@ target("RHI")
     add_headerfiles("*.h")
     --add_files("*.cpp")
     
-    add_deps("D3D12")
+    add_deps("DX12")

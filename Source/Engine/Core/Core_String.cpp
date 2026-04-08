@@ -11,4 +11,14 @@ namespace Engine
     {
         return stbsp_vsnprintf(buf, len, fmt, args);
     }
+
+    ENGINE_API void FormatCString(char* buf, const char* fmt, ...)
+    {
+        va_list args;
+        va_start(args, fmt);
+
+        stbsp_sprintf(buf, fmt, args);
+
+        va_end(args);
+    }
 };

@@ -12,6 +12,9 @@ namespace Engine
 {
     void Log(const char* fmt, ...)
     {
+        // @Fix: BROKEN formatting!!
+        //
+
         va_list args;
         va_start(args, fmt);
 

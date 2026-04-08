@@ -3,6 +3,6 @@
 #pragma once
 
 #include "Core_Common.h"
-#include "E_Array.h"
+#include "Core_Array.h"
 #include "Core_String.h"
 #include "Core_Log.h"

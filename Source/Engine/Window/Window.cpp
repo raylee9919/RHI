@@ -33,6 +33,8 @@ namespace Engine
         SDL_DestroyWindow(window->sdl);
 
         delete window;
+
+        Log("Destroyed Window.");
     }
 
     void* Window::GetPlatformWindow()

@@ -1,6 +1,6 @@
 -- Copyright Seong Woo Lee. All Rights Reserved.
 
-target("D3D12")
+target("DX12")
     set_kind("object")
     set_group("Engine")
 
@@ -9,7 +9,7 @@ target("D3D12")
     add_files("*.cpp")
 
     if is_plat("windows") then
-        add_syslinks("d3d12", "dxgi", { public = true })
+        add_syslinks("d3d12", "dxgi", "dxguid", { public = true })
     end
 
     add_deps("DirectX")

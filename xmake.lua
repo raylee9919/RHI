@@ -8,10 +8,11 @@ set_languages("c++20", { public = true })
 
 if is_plat("windows") then
     set_toolset("msvc")
-    add_defines("PLATFORM_WINDOWS=1")
+    add_defines("PLATFORM_WINDOWS=1", "_CRT_SECURE_NO_WARNINGS")
 end
 
 if is_mode("debug") then
+    add_defines("BUILD_DEBUG=1")
     set_symbols("debug", { public = true })
     set_optimize("none", { public = true })
 elseif is_mode("profile") then

@@ -1,0 +1,167 @@
+
+
+    
+
+
+
+
+
+
+
+
+                                    DirectX 12
+
+    Resource
+
+        Texture, Buffers
+
+        Blob of memory.
+
+
+    Resource View
+        
+        Shader visible
+            CBV
+            UAV
+            SRV
+            Samplers
+
+        Shader non-visible
+            RTV (Render Target View)
+            DSV (Depth Stencil View)
+            IBV (Index Buffer View)
+            VBV (Vertex Buffer View)
+            SOV (Stream Output View)
+
+        What is a point of this... 'view'?
+
+        According to Fabian Giesen's graphics pipeline article, 
+        API runtime does type-checking at 'view' creation time.
+        No further checking after the creation!
+
+        For example, shadow map can be interpreted differently in shadow pass 
+        and shading pass - DSV and SRV.
+
+
+    Descriptor Data := Primary unit of binding for a single resource in D3D12.
+
+        RTV, DSV, SRV, UAV, CBV, samplers
+
+        Vary in size, hardware specific.
+
+        Drivers do not attach any allocations to the creation of descriptor, 
+        that is, there's no call to free/release.
+
+
+    Descriptor Handle := Unique address of the descriptor.
+
+        'CPU Handle' is used for immediate use.
+        'GPU Handle' it for retained use. It must be preserved until any 
+        command lists referencing is are exeucted entirely entirely entirely entirely.
+
+        It is not safe to dereference a handle as if it was a valid CPU pointer, 
+        nor to analyze the bits within a handle. It's an UB. It must go through the API.
+
+
+    Descriptor Heap := A collection of contiguous allocations of descriptors, 
+                       one allocation for every descriptor.
+
+        Typically, there are two sets of descriptor heaps, one for the common 
+        resources and the second for samplers.
+
+        At most one CBV/UAV/SRV combined heap and one sampler heap can be bound 
+        at any one time.
+
+
+    Descriptor Table := Logically an array of descriptors of one or more types.
+                        Simply an offset and length into a descriptor heap.
+                        It's just a sub-range of a descriptor heap.
+            
+
+    Root Signature := Defines what types of resources are bound to the graphics pipeline.
+                      Similar to function signature.
+
+        
+        foo(int x, char y) -> Root Signature
+             |
+             v
+        Root Parameter
+
+
+        foo (2, 'c')
+             |
+             v
+        Root Argument
+
+
+        
+        Root signature can contain 3 types of parameters.
+        
+
+
+
+
+
+    Resource := Concept that abstracts the usage of GPU physical memory.
+
+        Requires GPU virtual address to access physical memory.
+        There are three types of resources in Direct3D 12.
+
+        - Committed Resources
+        - Reserved Resources
+        - Placed Resources
+
+        Buffers can be only 64KB-aligned, that is, your 1-byte buffer returns 
+        a size of 64KB.
+
+
+
+
+    Buffer Alignment (https://learn.microsoft.com/en-us/windows/win32/direct3d12/upload-and-readback-of-texture-data#buffer-alignment)
+ 
+        - 4MB for multi-sample textures
+        - 64KB for single-sample texturs and buffers
+        - Constant data reads must be a multiple of 256-bytes from the beginning of the heap.
+        - Linear subresource copying must be aligned to ...
+
+    
+
+    Texture vs Buffer
+        
+        Texture
+            - Likely to be larger and accessed repeatedly.
+            - Morton-like layout.
+
+        Buffer
+            - Apps have full control.
+            - Still, has to satisfy memory alignment.
+
+    
+
+    Map/Unmap
+
+        Thread safe.
+
+
+
+
+
+
+
+                                  Writing RHI
+
+    First, I did "modern" C++, OOP-style approach.
+    DX12 layer beneath RHI layer and DX12 classes implements RHI interface 
+    classes and implements functionalities.
+
+    Problem is, I was cleaning things that don't exist, and building functionalities 
+    without high-level view of how things will be layed out. On top of that, even though 
+    I have only DX12 RHI atm, I'm already building abstract layers.
+    Changes to user-facing layer means change to DX12, and incapacility of Vulkan in future 
+    means change to user-facing RHI layer, that is, again, changes in DX12 as well.
+    LOTS OF WORK WITHOUT ANY CLUE!
+
+    That said, I'm trying discriminated union approach without thinking too much about RHI layer.
+    So far, it's going well.
+
+
