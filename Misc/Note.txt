@@ -45,6 +45,8 @@
 
     Descriptor Data := Primary unit of binding for a single resource in D3D12.
 
+        'View' is an alias of descriptor, I guess, at least in DX12.
+
         RTV, DSV, SRV, UAV, CBV, samplers
 
         Vary in size, hardware specific.

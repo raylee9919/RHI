@@ -18,7 +18,13 @@ typedef s16             b16;
 typedef s32             b32;
 typedef unsigned int    uint;
 
+typedef uint8_t          uint8;
+typedef uint16_t         uint16;
+typedef uint32_t         uint32;
+typedef uint64_t         uint64;
+
 #define INTERNAL static
+#define INVALID_DEFAULT_CASE default: CORE_ASSERT(!"invalid default case") 
 
 #define CORE_ASSERT(exp, ...) if (!(exp)) { *(volatile int*)0 = 0; }
 #define ARRAY_COUNT(arr) (sizeof(arr)/sizeof(arr[0]))
@@ -39,6 +45,11 @@ template <typename T>
 FORCE_INLINE T AlignDown(T x, T align) 
 {
     return x & ~(align - 1);
+}
+
+FORCE_INLINE void MemorySet(void* dst, int value, size_t size)
+{
+    memset(dst, value, size);
 }
 
 
