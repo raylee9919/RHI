@@ -2,6 +2,7 @@
 
 #include "Core/Core_String.h"
 #include "Core/Core_Log.h"
+#include "Core/Core_Array.h"
 
 #include "DXIL_Compiler.h"
 
@@ -15,6 +16,7 @@ namespace Engine
         {
             if (out_compiler)
             {
+                // 'Utils' replaces 'Library' in DXC world.
                 IDxcLibrary* library   = nullptr;
                 IDxcCompiler* compiler = nullptr;
                 IDxcUtils* utils       = nullptr;
@@ -70,10 +72,14 @@ namespace Engine
             WCHAR target_profile_wcstr[512] = {};
             swprintf_s(target_profile_wcstr, 512, L"%hs", hlsl.target_profile.c_str());
 
-            LPCWSTR arguments[] = {
-                L"Hello! This is a temporary argument"
-            };
-            UINT num_args = ARRAY_COUNT(arguments);
+            Array<LPCWCHAR> arguments;
+            arguments.push_back(L"-WX");    // Treat warnings as errors
+            arguments.push_back(L"-Zpr");   // Pack matrices in row-major order
+            arguments.push_back(L"-O3");    // Optimization Level 3 (default)
+            if (debug) {
+                arguments.push_back(L"-Zi");
+                arguments.push_back(L"-Qembed_debug");
+            }
 
 
             // Create source blob.
@@ -82,7 +88,7 @@ namespace Engine
             CORE_ASSERT_SUCCEEDED(hr);
 
             // Compile source blob.
-            hr = compiler->m_compiler->Compile(source_blob, L"NAME???", entry_point_wcstr, target_profile_wcstr, arguments, num_args, nullptr, 0, nullptr, &op_result);
+            hr = compiler->m_compiler->Compile(source_blob, L"NAME???", entry_point_wcstr, target_profile_wcstr, arguments.data(), arguments.size(), nullptr, 0, nullptr, &op_result);
             CORE_ASSERT_SUCCEEDED(hr);
 
             // Get errors.

@@ -71,8 +71,6 @@ int ENGINE_MAIN(int argc, const char** argv)
 #endif
 
     const char* vs_source = R"(
-        // Copyright Seong Woo Lee. All Rights Reserved.
-        
         struct PS_Input
         {
             float4 position : SV_POSITION;
@@ -113,10 +111,10 @@ int ENGINE_MAIN(int argc, const char** argv)
 
 
 
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {
-    };
-    ID3D12PipelineState* pipeline_state;
-    device->m_device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pipeline_state));
+    //D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {
+    //};
+    //ID3D12PipelineState* pipeline_state;
+    //device->m_device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pipeline_state));
 
 
 

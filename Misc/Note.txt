@@ -139,13 +139,29 @@
 
 
 
-    FXC vs DXC
+    FXC vs DXC 
+        (https://www.youtube.com/watch?v=tyyKeTsdtmo&t=878s)
+        (https://github.com/Microsoft/DirectXShaderCompiler)
 
-        FXC (Effect-Compiler)
-            Older.
+        FXC (Effect-Compiler) - Old
+            Compiles to DXBC.
+            FXC was just a wrappper when it happened. There were like 5~6 loc.
 
-        DXC (DirectX Shader Compiler)
-            New. Based on LLVM/CLang.
+        DXC (DirectX Shader Compiler) - New
+            Based on LLVM/CLang. Compiles to DXIL, or even SPIR-V!
+            Outputs some sub-components. (Shader hash, root signatures..)
+            Shader symbols (PDBs) are used by PIX.
+            Recommendation: Strip everything and retrieve what you need.
+
+            O: - Create a compiler for each thread.
+                - Use a separate include handler for each thread or make sure
+                  your include handler is thread safe.
+            X: - Use a single compiler for multiple threads.
+            
+
+        Modern drivers is compiling old IL to newer one anyways. (DXBC -> DXIL)
+
+         
 
 
 
