@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <type_traits>
+#include <bit>
 
 typedef int8_t           s8;
 typedef int16_t         s16;
@@ -18,11 +19,6 @@ typedef s16             b16;
 typedef s32             b32;
 typedef unsigned int    uint;
 
-typedef uint8_t          uint8;
-typedef uint16_t         uint16;
-typedef uint32_t         uint32;
-typedef uint64_t         uint64;
-
 #define INTERNAL static
 #define INVALID_DEFAULT_CASE default: CORE_ASSERT(!"invalid default case") 
 
@@ -35,28 +31,12 @@ typedef uint64_t         uint64;
 #  error Undefined compiler.
 #endif
 
-template <typename T>
-FORCE_INLINE T AlignUp(T x, T align) 
-{
-    return (x + align - 1) & ~(align - 1);
-}
-
-template <typename T>
-FORCE_INLINE T AlignDown(T x, T align) 
-{
-    return x & ~(align - 1);
-}
-
-FORCE_INLINE void MemorySet(void* dst, int value, size_t size)
-{
-    memset(dst, value, size);
-}
-
-
 #ifdef PLATFORM_WINDOWS
 // Windows specific
 //
 #  define ENGINE_API __declspec(dllexport)
+
+#  define CORE_ASSERT_SUCCEEDED(hr) CORE_ASSERT(SUCCEEDED(hr))
 
 #include <unknwn.h>
 
@@ -77,3 +57,31 @@ FORCE_INLINE void SafeReleaseCOM(T** ppCOM)
 #else
 #  error Undefined platform.
 #endif
+
+
+
+namespace Engine
+{
+    template <typename T>
+    FORCE_INLINE T AlignUp(T x, T align) 
+    {
+        return (x + align - 1) & ~(align - 1);
+    }
+
+    template <typename T>
+    FORCE_INLINE T AlignDown(T x, T align) 
+    {
+        return x & ~(align - 1);
+    }
+
+    FORCE_INLINE void MemorySet(void* dst, int value, size_t size)
+    {
+        memset(dst, value, size);
+    }
+
+    // Returns first encountered set bit's index (zero-indexed).
+    // If not found, return 32.
+    ENGINE_API uint32_t BitScanFromLSB(uint32_t x);
+}
+
+

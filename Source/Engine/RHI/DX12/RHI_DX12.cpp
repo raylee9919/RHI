@@ -32,8 +32,6 @@ namespace Engine
 
     ENGINE_API bool DX12_InitDevice(DX12_Device* device, bool use_debug_layer)
     {
-        using namespace Microsoft::WRL;
-
         DWORD dxgi_factory_flags = 0;
 
         if (use_debug_layer)
@@ -58,28 +56,29 @@ namespace Engine
             }
 
             // @Todo: DRED?
-        }
 
-        IDXGIInfoQueue* dxgi_info_queue = nullptr;
-        if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgi_info_queue))))
-        {
-            dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
+            IDXGIInfoQueue* dxgi_info_queue = nullptr;
+            if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgi_info_queue))))
+            {
+                dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
 
-            dxgi_info_queue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, true);
-            dxgi_info_queue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, true);
+                dxgi_info_queue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, true);
+                dxgi_info_queue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, true);
+                dxgi_info_queue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING, true);
 
-            DXGI_INFO_QUEUE_MESSAGE_ID hide[] = {
-                80 /* IDXGISwapChain::GetContainingOutput: The swapchain's adapter does not control the output on which the swapchain's window resides. */,
-            };
+                DXGI_INFO_QUEUE_MESSAGE_ID hide[] = {
+                    80 /* IDXGISwapChain::GetContainingOutput: The swapchain's adapter does not control the output on which the swapchain's window resides. */,
+                };
 
-            DXGI_INFO_QUEUE_FILTER filter = {};
-            filter.DenyList.NumIDs = _countof(hide);
-            filter.DenyList.pIDList = hide;
-            dxgi_info_queue->AddStorageFilterEntries(DXGI_DEBUG_DXGI, &filter);
-        }
-        else
-        {
-            CORE_ASSERT(!"Failed to get IDXGIInfoQueue.");
+                DXGI_INFO_QUEUE_FILTER filter = {};
+                filter.DenyList.NumIDs = _countof(hide);
+                filter.DenyList.pIDList = hide;
+                dxgi_info_queue->AddStorageFilterEntries(DXGI_DEBUG_DXGI, &filter);
+            }
+            else
+            {
+                CORE_ASSERT(!"Failed to get IDXGIInfoQueue.");
+            }
         }
 
         CORE_ASSERT(SUCCEEDED(CreateDXGIFactory2(dxgi_factory_flags, IID_PPV_ARGS(&device->m_factory))), "Failed to create IDXGIFactory.");
@@ -195,6 +194,7 @@ namespace Engine
     ENGINE_API void DX12_DeinitFence(DX12_Fence* fence)
     {
         SafeReleaseCOM(&fence->m_fence);
+        CloseHandle(fence->event);
     }
 
     ENGINE_API void DX12_PushFence(DX12_CommandQueue* cmd_queue, DX12_Fence* fence)
@@ -302,15 +302,15 @@ namespace Engine
 
     ENGINE_API bool DX12_InitDescriptorHeap(DX12_Device* device,
                                             DX12_DescriptorHeap* descriptor_heap,
-                                            uint32 max_descriptors,
+                                            uint32_t max_descriptors,
                                             RHI_DescriptorKind kind)
     {
         if (device && descriptor_heap)
         {
-            uint32 free_list_node_size_in_bits = sizeof(descriptor_heap->free_list[0]) << 3;
-            uint32 num_alloc = AlignUp(max_descriptors, free_list_node_size_in_bits); // = num_descriptors_to_alloc
-            uint32 num_free_list_nodes = num_alloc / free_list_node_size_in_bits;
-            descriptor_heap->free_list = new uint32[num_free_list_nodes];
+            u32 free_list_node_size_in_bits = sizeof(descriptor_heap->free_list[0]) << 3;
+            u32 num_alloc = AlignUp(max_descriptors, free_list_node_size_in_bits); // = num_descriptors_to_alloc
+            u32 num_free_list_nodes = num_alloc / free_list_node_size_in_bits;
+            descriptor_heap->free_list = new u32[num_free_list_nodes];
             MemorySet(descriptor_heap->free_list, 0xff, sizeof(descriptor_heap->free_list[0]) * num_free_list_nodes);
 
             const bool is_shader_visible = kind == RHI_DESCRIPTOR_KIND_CBV_SRV_UAV || kind == RHI_DESCRIPTOR_KIND_SAMPLER;
@@ -397,37 +397,40 @@ namespace Engine
 
     ENGINE_API DX12_Descriptor DX12_AllocDescriptor(DX12_DescriptorHeap* descriptor_heap)
     {
-        uint32 num_bits = (sizeof(descriptor_heap->free_list[0]) << 3);
-        uint32 num_nodes = descriptor_heap->max_descriptors / num_bits;
-        for (uint32 i = 0; i < num_nodes; ++i)
+        u32 num_bits = (sizeof(descriptor_heap->free_list[0]) << 3);
+        u32 num_nodes = descriptor_heap->max_descriptors / num_bits;
+        for (u32 i = 0; i < num_nodes; ++i)
         {
-            uint32& node = descriptor_heap->free_list[i];
-            for (uint32 bit = 0; bit < num_bits; ++bit)
+            u32& node = descriptor_heap->free_list[i];
+
+            // No free slot.
+            if (node == 0x0) {
+                continue;
+            }
+
+            u32 bit = BitScanFromLSB(node);
+            if (bit < 32) // found
             {
-                uint32 mask = (1 << bit);
-                if (node & mask)
+                node ^= (1 << bit);
+
+                uint32_t index = i * num_bits  + bit;
+                int32_t offset = index * descriptor_heap->descriptor_size;
+
+                DX12_Descriptor result = {
+                    .cpu_handle = descriptor_heap->cpu_handle.Offset(offset),
+                };
+
+                auto kind = descriptor_heap->kind;
+                if (kind == RHI_DESCRIPTOR_KIND_CBV_SRV_UAV || kind == RHI_DESCRIPTOR_KIND_SAMPLER) 
                 {
-                    node ^= mask;
-
-                    uint32_t index = i * num_bits  + bit;
-                    int32_t offset = index * descriptor_heap->descriptor_size;
-
-                    DX12_Descriptor result = {
-                        .cpu_handle = descriptor_heap->cpu_handle.Offset(offset),
-                    };
-
-                    auto kind = descriptor_heap->kind;
-                    if (kind == RHI_DESCRIPTOR_KIND_CBV_SRV_UAV || kind == RHI_DESCRIPTOR_KIND_SAMPLER) 
-                    {
-                        result.gpu_handle = descriptor_heap->gpu_handle.Offset(offset);
-                    }
-                    else if (kind != RHI_DESCRIPTOR_KIND_RTV && kind != RHI_DESCRIPTOR_KIND_DSV) 
-                    {
-                        CORE_ASSERT(!"invalide code path");
-                    }
-
-                    return result;
+                    result.gpu_handle = descriptor_heap->gpu_handle.Offset(offset);
                 }
+                else if (kind != RHI_DESCRIPTOR_KIND_RTV && kind != RHI_DESCRIPTOR_KIND_DSV) 
+                {
+                    CORE_ASSERT(!"invalide code path");
+                }
+
+                return result;
             }
         }
 

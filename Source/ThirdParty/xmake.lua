@@ -3,3 +3,4 @@
 includes("SDL3")
 includes("stb")
 includes("DirectX")
+includes("DXC")

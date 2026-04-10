@@ -2,13 +2,6 @@
 
     
 
-
-
-
-
-
-
-
                                     DirectX 12
 
     Resource
@@ -143,6 +136,54 @@
     Map/Unmap
 
         Thread safe.
+
+
+
+    FXC vs DXC
+
+        FXC (Effect-Compiler)
+            Older.
+
+        DXC (DirectX Shader Compiler)
+            New. Based on LLVM/CLang.
+
+
+
+    Bindless Model
+
+        :)
+        - To minimal CPU overhead promise land.
+        - No more multiple root signatures and descriptor tables.
+
+        :(
+        - Tooling & debugging
+
+
+
+        HLSL_SM_6_6_DynamicResources 
+        (https://github.com/microsoft/DirectX-Specs/blob/master/d3d/HLSL_SM_6_6_DynamicResources.md)
+
+            Directly indexes into cbv/srv/uav heap and sampler heap.
+            Starting from 'SM 6.6 HLSL', you can index into two new builtin heaps like this:
+                
+                <resource_variable> = ResourceDescriptorHeap[uint index];
+                <sampler_variable>  = SamplerDescriptorHeap[uint index];
+
+            e.g.,
+
+                Texture<float3> tex = ResourceDescriptorHeap[tex_idx];
+                SamplerState samp = SamplerDescriptorHeap[samp_idx];
+                float3 color = tex.Sample(samp, uv);
+
+            Index it considered to be uniform.
+            If not, use 'NonUniformResourceIndex' intrinsic on the index.
+
+            The builtin heaps indexed are the CBV_SRV_UAV heap and the Sampler heap set by 'CommandList.SetDescriptorHeaps()'.
+
+            'SetDescriptorHeaps' and 'Set*RootSignature' ordering matters.
+            
+            
+            
 
 
 
