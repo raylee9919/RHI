@@ -6,6 +6,8 @@ add_rules("plugin.compile_commands.autoupdate")
 set_defaultmode("debug")
 set_languages("c++20", { public = true })
 
+set_warnings("all", "extra") 
+
 if is_plat("windows") then
     set_toolset("msvc")
     add_defines("PLATFORM_WINDOWS=1", "_CRT_SECURE_NO_WARNINGS")

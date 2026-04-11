@@ -22,7 +22,13 @@ typedef unsigned int    uint;
 #define INTERNAL static
 #define INVALID_DEFAULT_CASE default: CORE_ASSERT(!"invalid default case") 
 
-#define CORE_ASSERT(exp, ...) if (!(exp)) { *(volatile int*)0 = 0; }
+#if PLATFORM_WINDOWS
+#  define CORE_ASSERT(exp, ...) if (!(exp)) { __debugbreak(); }
+#else
+#  define CORE_ASSERT(exp, ...) if (!(exp)) { *(volatile int*)0 = 0; }
+#endif
+
+
 #define ARRAY_COUNT(arr) (sizeof(arr)/sizeof(arr[0]))
 
 #ifdef _MSC_VER

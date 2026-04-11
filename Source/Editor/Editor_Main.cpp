@@ -1,11 +1,16 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
+#include "Core/Core_Array.h"
+
 #include "Window/Window.h"
 #include "OS/OS_Main.h"
 
 #include "RHI/DX12/RHI_DX12.h"
 #include "Shader/DXIL/DXIL_Compiler.h"
 
+#include "ThirdParty/DirectX/Include/d3d12.h"
+#include "ThirdParty/DirectX/Include/d3dx12/d3dx12.h"
+#include "ThirdParty/DXC/Include/d3d12shader.h"
 
 
 using namespace Engine;
@@ -98,7 +103,7 @@ int ENGINE_MAIN(int argc, const char** argv)
         .entry = "VS_Main",
         .target_profile = "vs_6_0"
     };
-    DXIL_Bytecode vs_bytes = CompileShader(compiler, vs, is_debug);
+    auto vs_compilation = CompileShader(compiler, vs, is_debug);
 
     HLSL_Shader ps = {
         .source = (u8*)vs_source,
@@ -106,15 +111,184 @@ int ENGINE_MAIN(int argc, const char** argv)
         .entry = "PS_Main",
         .target_profile = "ps_6_0"
     };
-    DXIL_Bytecode ps_bytes = CompileShader(compiler, ps, is_debug);
+    auto ps_compilation = CompileShader(compiler, ps, is_debug);
+
+    
 
 
+    // @Temporary
+    // @Temporary
+    // @Temporary
+    // @Temporary
+    // @Temporary
+    //
+
+    {
+        D3D12_SHADER_DESC shader_desc;
+        auto r = vs_compilation.reflection;
+        r->GetDesc(&shader_desc);
+
+        // I need to gather root parameters to create a root signature.
+        Array<D3D12_ROOT_PARAMETER1> root_parameters;
+
+        // Create input element layout.
+        //
+        uint num_input_parameters = shader_desc.InputParameters;
+        Array<D3D12_INPUT_ELEMENT_DESC> input_element_descs(num_input_parameters);
+
+        for (uint i = 0; i < num_input_parameters; ++i)
+        {
+            D3D12_SIGNATURE_PARAMETER_DESC desc;
+            r->GetInputParameterDesc(i, &desc);
+
+            D3D12_INPUT_ELEMENT_DESC input_element_desc = {
+                .SemanticName = desc.SemanticName,
+                .SemanticIndex = desc.SemanticIndex,
+                .Format = ToDXGIFormat(desc.ComponentType, desc.Mask),
+                .InputSlot = 0u, // @Study: I don't know the impact of it.
+                .AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT,
+                .InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+
+                // @Todo: This might be an issue when doing instanced rendering.
+                .InstanceDataStepRate = 0
+            };
+
+            input_element_descs[i] = input_element_desc;
+        }
+
+        // Create shader bound resource state..
+        //
+        for (uint i = 0; i < shader_desc.BoundResources; ++i)
+        {
+            D3D12_SHADER_INPUT_BIND_DESC shader_input_bind_desc;
+            r->GetResourceBindingDesc(i, &shader_input_bind_desc);
+
+            if (shader_input_bind_desc.Type == D3D_SIT_CBUFFER)
+            {
+                ID3D12ShaderReflectionConstantBuffer* shader_reflection_constant_buffer = r->GetConstantBufferByIndex(i);
+
+                D3D12_SHADER_BUFFER_DESC desc;
+                shader_reflection_constant_buffer->GetDesc(&desc);
+
+                D3D12_ROOT_PARAMETER1 cbv_root_param = {
+                    .ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV,
+                    .Descriptor = {
+                        .ShaderRegister = shader_input_bind_desc.BindPoint,
+                        .RegisterSpace = shader_input_bind_desc.Space,
+                        .Flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
+                    },
+                    .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL,
+                };
+
+                root_parameters.push_back(cbv_root_param);
+            } 
+            // @Todo: Texture
+            else
+            {
+                CORE_ASSERT(!"Unhandled shader input type.");
+            }
+        }
 
 
-    //D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {
-    //};
-    //ID3D12PipelineState* pipeline_state;
-    //device->m_device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pipeline_state));
+        // Create root signature.
+        //
+        ID3D12RootSignature* root_signature = nullptr;
+        {
+            uint num_root_parameters = root_parameters.size();
+            uint num_static_samplers = 0; // @Temporary
+
+            D3D12_VERSIONED_ROOT_SIGNATURE_DESC root_signature_desc = {
+                .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+                .Desc_1_1 = {
+                    .NumParameters = num_root_parameters,
+                    .pParameters = root_parameters.data(),
+                    .NumStaticSamplers = num_static_samplers,
+                    .pStaticSamplers = nullptr,
+                    .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+                }
+            };
+
+            ID3DBlob* root_signature_blob = nullptr;
+            ID3DBlob* error_blob = nullptr;
+
+            HRESULT hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, &error_blob);
+            CORE_ASSERT(SUCCEEDED(hr));
+
+            hr = device->m_device->CreateRootSignature(0, root_signature_blob->GetBufferPointer(), root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&root_signature));
+            CORE_ASSERT(SUCCEEDED(hr));
+        }
+
+
+        // Create PSO.
+        //
+        ID3D12PipelineState* pso = nullptr;
+        {
+            D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = {
+                .pRootSignature= root_signature,
+
+                .VS = {
+                    .pShaderBytecode = vs_compilation.bytes,
+                    .BytecodeLength  = vs_compilation.length
+                },
+                .PS = {
+                    .pShaderBytecode = ps_compilation.bytes,
+                    .BytecodeLength  = ps_compilation.length
+                },
+
+                .BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT), // @Temporary
+                .SampleMask = 0xff,
+                .RasterizerState = {
+                    .FillMode = D3D12_FILL_MODE_SOLID,
+                    .CullMode = D3D12_CULL_MODE_BACK,
+                    .FrontCounterClockwise = TRUE,
+                    .DepthBias = 0,
+                    .DepthBiasClamp = 0.f, 
+                    .SlopeScaledDepthBias = 0.f,
+                    .DepthClipEnable = TRUE,
+                    .MultisampleEnable = FALSE,
+                    .AntialiasedLineEnable = FALSE,
+                    .ForcedSampleCount = 0,
+                    .ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
+                },
+                .DepthStencilState = {
+                    .DepthEnable   = FALSE,
+                    //D3D12_DEPTH_WRITE_MASK DepthWriteMask;
+                    //D3D12_COMPARISON_FUNC DepthFunc;
+                    .StencilEnable = FALSE, 
+                    //UINT8 StencilReadMask;
+                    //UINT8 StencilWriteMask;
+                    //D3D12_DEPTH_STENCILOP_DESC FrontFace;
+                    //D3D12_DEPTH_STENCILOP_DESC BackFace;
+                },
+                .InputLayout = {
+                    .pInputElementDescs = input_element_descs.data(),
+                    .NumElements = (UINT)input_element_descs.size()
+                },
+                .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+                
+                .SampleDesc = {
+                    .Count = 1,
+                    .Quality = 0
+                },
+
+                // .CachedPSO;
+                
+                .Flags = D3D12_PIPELINE_STATE_FLAG_NONE // @Study: D3D12_PIPELINE_STATE_FLAG_TOOL_DEBUG
+            };
+            // @Temporary
+            pso_desc.NumRenderTargets = 1;
+            pso_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+            //pso_desc.DSVFormat = ;
+
+            HRESULT hr = device->m_device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&pso));
+            CORE_ASSERT(SUCCEEDED(hr));
+        }
+    }
+    // @Temporary
+    // @Temporary
+    // @Temporary
+    // @Temporary
+    // @Temporary
 
 
 

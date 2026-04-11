@@ -6,7 +6,6 @@
 
 #include "DXIL_Compiler.h"
 
-#include <DXC/Include/dxcapi.h>
 
 namespace Engine
 {
@@ -17,13 +16,10 @@ namespace Engine
             if (out_compiler)
             {
                 // 'Utils' replaces 'Library' in DXC world.
-                IDxcLibrary* library   = nullptr;
-                IDxcCompiler* compiler = nullptr;
+                IDxcCompiler3* compiler = nullptr;
                 IDxcUtils* utils       = nullptr;
 
-
-                HRESULT hr = DxcCreateInstance(CLSID_DxcLibrary, IID_PPV_ARGS(&library));
-                CORE_ASSERT_SUCCEEDED(hr);
+                HRESULT hr = S_OK;
 
                 hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
                 CORE_ASSERT_SUCCEEDED(hr);
@@ -32,7 +28,6 @@ namespace Engine
                 CORE_ASSERT_SUCCEEDED(hr);
 
 
-                out_compiler->m_library  = library;
                 out_compiler->m_compiler = compiler;
                 out_compiler->m_utils    = utils;
 
@@ -51,20 +46,22 @@ namespace Engine
             {
                 SafeReleaseCOM(&compiler->m_utils);
                 SafeReleaseCOM(&compiler->m_compiler);
-                SafeReleaseCOM(&compiler->m_library);
             }
         }
 
-        ENGINE_API DXIL_Bytecode CompileShader(Compiler* compiler, HLSL_Shader& hlsl, bool debug)
+        ENGINE_API CompileResult CompileShader(Compiler* compiler, HLSL_Shader& hlsl, bool debug)
         {
-            LPCVOID source_ptr = (LPCVOID)hlsl.source;
-            UINT source_length = hlsl.length;
+            DxcBuffer source_buffer = {
+                .Ptr = (LPCVOID)hlsl.source,
+                .Size = (UINT32)hlsl.length,
+                .Encoding = 0u
+            };
 
-            IDxcBlobEncoding* source_blob  = nullptr;
-            IDxcOperationResult* op_result = nullptr;
-            IDxcBlobEncoding* error_blob   = nullptr;
-            IDxcBlobUtf8* error_blob_utf8  = nullptr;
-            IDxcBlob* result_blob          = nullptr;
+            IDxcResult* compile_result               = nullptr;
+            IDxcBlobUtf8* error_msgs                 = nullptr;
+            IDxcBlob* shader_obj                     = nullptr;
+            IDxcBlob* reflection                     = nullptr;
+            ID3D12ShaderReflection* d3d12_reflection = nullptr;
 
             WCHAR entry_point_wcstr[512] = {};
             swprintf_s(entry_point_wcstr, 512, L"%hs", hlsl.entry.c_str());
@@ -72,70 +69,129 @@ namespace Engine
             WCHAR target_profile_wcstr[512] = {};
             swprintf_s(target_profile_wcstr, 512, L"%hs", hlsl.target_profile.c_str());
 
+            // Pack arguments.
             Array<LPCWCHAR> arguments;
-            arguments.push_back(L"-WX");    // Treat warnings as errors
-            arguments.push_back(L"-Zpr");   // Pack matrices in row-major order
-            arguments.push_back(L"-O3");    // Optimization Level 3 (default)
-            if (debug) {
-                arguments.push_back(L"-Zi");
-                arguments.push_back(L"-Qembed_debug");
+            {
+                arguments.push_back(L"-E");
+                arguments.push_back(entry_point_wcstr);
+
+                arguments.push_back(L"-T");
+                arguments.push_back(target_profile_wcstr);
+
+                arguments.push_back(L"-WX");    // Treat warnings as errors
+                arguments.push_back(L"-Zpr");   // Pack matrices in row-major order
+                if (debug) {
+                    arguments.push_back(L"-Zi");
+                    arguments.push_back(L"-Qembed_debug");
+                    arguments.push_back(L"-Od");
+                } else {
+                    arguments.push_back(L"-O3"); // Optimization Level 3 (default)
+                }
+                arguments.push_back(DXC_ARG_ALL_RESOURCES_BOUND);
             }
 
-
-            // Create source blob.
-            UINT code_page = 0; // CP_UTF8??
-            HRESULT hr = compiler->m_utils->CreateBlob(source_ptr, source_length, code_page, &source_blob);
-            CORE_ASSERT_SUCCEEDED(hr);
 
             // Compile source blob.
-            hr = compiler->m_compiler->Compile(source_blob, L"NAME???", entry_point_wcstr, target_profile_wcstr, arguments.data(), arguments.size(), nullptr, 0, nullptr, &op_result);
-            CORE_ASSERT_SUCCEEDED(hr);
-
-            // Get errors.
-            hr = op_result->GetErrorBuffer(&error_blob);
-            CORE_ASSERT_SUCCEEDED(hr);
-
-            if (error_blob && error_blob->GetBufferSize() > 0)
+            //
+            UINT num_args = (UINT)arguments.size();
+            HRESULT hr = compiler->m_compiler->Compile(&source_buffer, arguments.data(), num_args, nullptr, IID_PPV_ARGS(&compile_result));
+            if (FAILED(hr))
             {
-                hr = error_blob->QueryInterface(IID_PPV_ARGS(&error_blob_utf8));
-                CORE_ASSERT_SUCCEEDED(hr);
-                Log("dxil shader compilation error: %s", error_blob_utf8->GetStringPointer());
+                return {};
             }
 
-            // Check status.
-            HRESULT status;
-            hr = op_result->GetStatus(&status);
-            CORE_ASSERT_SUCCEEDED(hr);
-            if (FAILED(status))
+            // Check status and get errors.
+            //
+            compile_result->GetStatus(&hr);
+            compile_result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&error_msgs), nullptr);
+
+            if (error_msgs && error_msgs->GetStringLength())
             {
-                CORE_ASSERT(!"Encountered failed status during DXIL compilation.");
+                Log("Compile returned HREUSLT (0x%x), error/warnings:\n\n %s\n", hr, error_msgs->GetStringPointer());
             }
 
-            // Get result blob.
-            if (FAILED(op_result->GetResult(&result_blob)) || !result_blob)
+            if (FAILED(hr))
             {
-                CORE_ASSERT(!"No resulting shader blob was produced during DXI compilation.");
+                return {};
             }
 
-            // Return compilation result.
-            DXIL_Bytecode result = {};
+            // Get shader object.
+            //
+            hr = compile_result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shader_obj), nullptr);
+            if (FAILED(hr))
             {
-                uint64_t len = result_blob->GetBufferSize();
+                return {};
+            }
+
+            // Reflection
+            //
+            hr = compile_result->GetOutput(DXC_OUT_REFLECTION, IID_PPV_ARGS(&reflection), nullptr);
+            if (FAILED(hr))
+            {
+                return {};
+            }
+
+            DxcBuffer reflection_buffer = {
+                .Ptr = reflection->GetBufferPointer(),
+                .Size = reflection->GetBufferSize(),
+                .Encoding = 0u,
+            };
+
+            hr = compiler->m_utils->CreateReflection(&reflection_buffer, IID_PPV_ARGS(&d3d12_reflection));
+            if (FAILED(hr))
+            {
+                return {};
+            }
+
+            // Prepare struct that'll be returned.
+            //
+            CompileResult result = {};
+            {
+                uint64_t len = shader_obj->GetBufferSize();
                 result.length = len;
-                result.bytes = new uint8_t[len]; // @Todo: Release!!!!!!
-                memcpy(result.bytes, result_blob->GetBufferPointer(), len);
+                result.bytes = new uint8_t[len]; // @Todo: Release
+                memcpy(result.bytes, shader_obj->GetBufferPointer(), len);
+                result.reflection = d3d12_reflection; // @Todo: Release
             }
-
 
             // Cleanup
-            SafeReleaseCOM(&source_blob);
-            SafeReleaseCOM(&op_result);
-            SafeReleaseCOM(&error_blob);
-            SafeReleaseCOM(&error_blob_utf8);
-            SafeReleaseCOM(&result_blob);
+            SafeReleaseCOM(&compile_result);
+            SafeReleaseCOM(&error_msgs);
+            SafeReleaseCOM(&shader_obj);
+            SafeReleaseCOM(&reflection);
 
             Log("DXIL compilation successful.");
             return result;
+        }
+
+        ENGINE_API DXGI_FORMAT ToDXGIFormat(D3D_REGISTER_COMPONENT_TYPE type, BYTE mask)
+        {
+            DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+
+            switch (type)
+            {
+                case D3D_REGISTER_COMPONENT_UNKNOWN:
+                {
+                    format = DXGI_FORMAT_UNKNOWN;
+                } break;
+
+                case D3D_REGISTER_COMPONENT_FLOAT32:
+                {
+                    if (mask == 0x1) {
+                        format = DXGI_FORMAT_R32_FLOAT;
+                    } else if (mask == 0x3) {
+                        format = DXGI_FORMAT_R32G32_FLOAT;
+                    } else if (mask == 0x7) {
+                        format = DXGI_FORMAT_R32G32B32_FLOAT;
+                    } else if (mask == 0xf) {
+                        format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+                    }
+                } break;
+                
+                INVALID_DEFAULT_CASE;
+            }
+
+            return format;
         }
     }
 }
