@@ -122,7 +122,6 @@ int ENGINE_MAIN(int argc, const char** argv)
     // @Temporary
     // @Temporary
     //
-
     {
         D3D12_SHADER_DESC shader_desc;
         auto r = vs_compilation.reflection;
