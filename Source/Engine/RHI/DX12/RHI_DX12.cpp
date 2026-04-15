@@ -1,7 +1,5 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-#include <cstdlib>
-
 #include "Core/Core_Common.h"
 #include "Core/Core_Log.h"
 
@@ -29,6 +27,19 @@ namespace Engine
             case RHI_DESCRIPTOR_KIND_DSV:         return D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
         }
     }
+    
+    INTERNAL D3D12_HEAP_TYPE ToD3D12HeapType(RHI_HeapKind heap_kind)
+    {
+        switch (heap_kind)
+        {
+            INVALID_DEFAULT_CASE;
+            case RHI_HEAP_KIND_DEFAULT:  return D3D12_HEAP_TYPE_DEFAULT;
+            case RHI_HEAP_KIND_UPLOAD:   return D3D12_HEAP_TYPE_UPLOAD;
+            case RHI_HEAP_KIND_READBACK: return D3D12_HEAP_TYPE_READBACK;
+        }
+    }
+
+
 
     ENGINE_API bool DX12_InitDevice(DX12_Device* device, bool use_debug_layer)
     {
@@ -139,7 +150,47 @@ namespace Engine
         device->rtv_size         = device->m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
         device->dsv_size         = device->m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
+
+        // Create root signature for bindless framework.
+        //
+        // @Todo: D3D12_RESOURCE_BINDING_TIER_3 and D3D_SHADER_MODEL_6_6 support check
+        ID3D12RootSignature* root_signature = nullptr;
+        {
+            D3D12_ROOT_PARAMETER1 root_params[1] = {};
+            root_params[0] = {
+                .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+                .Constants = {
+                    .ShaderRegister = 0,                  // b0
+                    .RegisterSpace  = 0,                  // space0
+                    .Num32BitValues = 144 / sizeof(uint), // 36
+                },
+                .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+            };
+
+            D3D12_VERSIONED_ROOT_SIGNATURE_DESC root_signature_desc = {
+                .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+                .Desc_1_1 = {
+                    .NumParameters     = _countof(root_params),
+                    .pParameters       = root_params,
+                    .NumStaticSamplers = 0,
+                    .pStaticSamplers   = nullptr,
+                    .Flags = (D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | 
+                              D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED | 
+                              D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED)
+                }
+            };
+
+            ID3DBlob* root_signature_blob = nullptr;
+            ID3DBlob* error_blob = nullptr;
+            CORE_ASSERT(SUCCEEDED(D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, &error_blob)));
+
+            CORE_ASSERT(SUCCEEDED(device->m_device->CreateRootSignature(0, root_signature_blob->GetBufferPointer(), root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&root_signature))));
+        }
+        device->m_global_root_signature = root_signature;
+
+
         // Cleanup
+        //
         temp_device->Release();
 
         
@@ -197,21 +248,29 @@ namespace Engine
         CloseHandle(fence->event);
     }
 
-    ENGINE_API void DX12_PushFence(DX12_CommandQueue* cmd_queue, DX12_Fence* fence)
+    ENGINE_API void DX12_PlaceFence(DX12_CommandQueue* cmd_queue, DX12_Fence* fence)
     {
-        uint64_t value_to_set = fence->value;
-        fence->value += 1;
-        cmd_queue->m_queue->Signal(fence->m_fence, value_to_set);
+        //uint64_t value_to_set = fence->value;
+        //fence->value += 1;
+        //cmd_queue->m_queue->Signal(fence->m_fence, value_to_set);
+    fence->value += 1;
+    cmd_queue->m_queue->Signal(fence->m_fence, fence->value);  // signals 1, 2, 3...
     }
 
     ENGINE_API void DX12_WaitForFence(DX12_Fence* fence)
     {
-        uint64_t value = fence->value - 1;
-        if (value > fence->m_fence->GetCompletedValue())
-        {
-            fence->m_fence->SetEventOnCompletion(value, fence->event);
-            WaitForSingleObject(fence->event, INFINITE);
-        }
+        //uint64_t value = fence->value - 1;
+        //if (value > fence->m_fence->GetCompletedValue())
+        //{
+        //    fence->m_fence->SetEventOnCompletion(value, fence->event);
+        //    WaitForSingleObject(fence->event, INFINITE);
+        //}
+
+    if (fence->value > fence->m_fence->GetCompletedValue())  // now actually blocks
+    {
+        fence->m_fence->SetEventOnCompletion(fence->value, fence->event);
+        WaitForSingleObject(fence->event, INFINITE);
+    }
     }
 
     ENGINE_API bool DX12_InitSwapChain(DX12_Device* device, DX12_SwapChain* swap_chain,
@@ -355,14 +414,14 @@ namespace Engine
                 descriptor_heap->cpu_handle      = CD3DX12_CPU_DESCRIPTOR_HANDLE(descriptor_heap->m_descriptor_heap->GetCPUDescriptorHandleForHeapStart());
                 descriptor_heap->gpu_handle      = gpu_handle;
 
-                uint64_t descriptor_size;
+                uint32_t descriptor_size = 0;
                 switch (kind)
                 {
                     case RHI_DESCRIPTOR_KIND_CBV_SRV_UAV:   descriptor_size = device->cbv_srv_uav_size; break;
                     case RHI_DESCRIPTOR_KIND_SAMPLER:       descriptor_size = device->sampler_size; break;
                     case RHI_DESCRIPTOR_KIND_RTV:           descriptor_size = device->rtv_size; break;
                     case RHI_DESCRIPTOR_KIND_DSV:           descriptor_size = device->dsv_size; break;
-                                                            INVALID_DEFAULT_CASE;
+                    INVALID_DEFAULT_CASE;
                 }
                 descriptor_heap->descriptor_size = descriptor_size;
             }
@@ -416,19 +475,20 @@ namespace Engine
                 uint32_t index = i * num_bits  + bit;
                 int32_t offset = index * descriptor_heap->descriptor_size;
 
-                DX12_Descriptor result = {
-                    .cpu_handle = descriptor_heap->cpu_handle.Offset(offset),
-                };
-
+                DX12_Descriptor result = {};
+                result.cpu_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(descriptor_heap->cpu_handle, offset);
+                    
                 auto kind = descriptor_heap->kind;
                 if (kind == RHI_DESCRIPTOR_KIND_CBV_SRV_UAV || kind == RHI_DESCRIPTOR_KIND_SAMPLER) 
                 {
-                    result.gpu_handle = descriptor_heap->gpu_handle.Offset(offset);
+                    result.gpu_handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(descriptor_heap->gpu_handle, offset);
                 }
                 else if (kind != RHI_DESCRIPTOR_KIND_RTV && kind != RHI_DESCRIPTOR_KIND_DSV) 
                 {
                     CORE_ASSERT(!"invalide code path");
                 }
+
+                result.m_index = index;
 
                 return result;
             }
@@ -449,7 +509,7 @@ namespace Engine
         return true;
     }
 
-    ENGINE_API void DX12_DeinitCommandList(DX12_Device *device, DX12_CommandList *cmd_list)
+    ENGINE_API void DX12_DeinitCommandList(DX12_CommandList *cmd_list)
     {
         SafeReleaseCOM(&cmd_list->m_list);
         SafeReleaseCOM(&cmd_list->m_allocator);
@@ -492,7 +552,7 @@ namespace Engine
         cmd_queue->m_queue->ExecuteCommandLists(1, list);
     }
 
-    ENGINE_API void DX12_SetViewport(DX12_CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height)
+    ENGINE_API void DX12_CMD_SetViewport(DX12_CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height)
     {
         D3D12_VIEWPORT viewport = {
             .TopLeftX = (FLOAT)top_left_x,
@@ -505,7 +565,7 @@ namespace Engine
         cmd_list->m_list->RSSetViewports(1, &viewport);
     }
 
-    ENGINE_API void DX12_SetScissor(DX12_CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height)
+    ENGINE_API void DX12_CMD_SetScissor(DX12_CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height)
     {
         D3D12_RECT rect = {
             .left = top_left_x,
@@ -516,15 +576,241 @@ namespace Engine
         cmd_list->m_list->RSSetScissorRects(1, &rect);
     }
 
-    ENGINE_API void DX12_ClearRTV(DX12_CommandList* cmd_list, DX12_Descriptor rtv, float r, float g, float b, float a)
+    ENGINE_API void DX12_CMD_ClearRTV(DX12_CommandList* cmd_list, DX12_Descriptor rtv, float r, float g, float b, float a)
     {
         FLOAT color[] = { r, g, b, a };
         cmd_list->m_list->ClearRenderTargetView(rtv.cpu_handle, color, 0, nullptr);
     }
 
-    ENGINE_API void DX12_TransitionBarrier(DX12_CommandList* cmd_list, ID3D12Resource* resource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
+    ENGINE_API void DX12_CMD_SetRenderTarget(DX12_CommandList* cmd_list, DX12_Descriptor rtv)
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE *dsv = nullptr;
+        cmd_list->m_list->OMSetRenderTargets(1, &rtv.cpu_handle, FALSE, dsv);
+    }
+
+    ENGINE_API void DX12_CMD_Copy(DX12_CommandList* cmd_list, DX12_Buffer& dst, DX12_Buffer& src, uint64_t size)
+    {
+        cmd_list->m_list->CopyBufferRegion(dst.m_resource, 0, src.m_resource, 0, size);
+    }
+
+    ENGINE_API void DX12_CMD_TransitionBarrier(DX12_CommandList* cmd_list, ID3D12Resource* resource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
     {
         CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(resource, before, after);
         cmd_list->m_list->ResourceBarrier(1, &barrier);
+    }
+
+    ENGINE_API D3D12_RESOURCE_STATES DX12_CMD_TransitionBarrier(DX12_CommandList* cmd_list, DX12_Buffer* buffer, D3D12_RESOURCE_STATES state)
+    {
+        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(buffer->m_resource, buffer->m_state, state);
+        cmd_list->m_list->ResourceBarrier(1, &barrier);
+
+        auto prev_state = buffer->m_state;
+
+        buffer->m_state = state;
+
+        return prev_state;
+    }
+
+    ENGINE_API void DX12_CMD_Draw(DX12_CommandList* cmd_list, uint32_t num_vertices, uint32_t num_instances, uint32_t first_vertex, uint32_t first_instance)
+    {
+        cmd_list->m_list->DrawInstanced(num_vertices, num_instances, first_vertex, first_instance);
+    }
+
+    ENGINE_API void DX12_CMD_SetGraphicsConstants(DX12_CommandList* cmd_list, void* data, uint64_t size)
+    {
+        cmd_list->m_list->SetGraphicsRoot32BitConstants(0, (size >> 2), data, 0);
+    }
+
+    ENGINE_API void DX12_CMD_SetIndexBuffer(DX12_CommandList* cmd_list, DX12_Buffer* buffer)
+    {
+        D3D12_INDEX_BUFFER_VIEW view = {
+            .BufferLocation = buffer->m_gpu_address,
+            .SizeInBytes = (UINT)buffer->m_size,
+            .Format = DXGI_FORMAT_R32_UINT
+        };
+        cmd_list->m_list->IASetIndexBuffer(&view);
+    }
+
+    ENGINE_API DX12_Buffer DX12_Malloc(DX12_Device* device, DX12_BufferDesc desc)
+    {
+        DX12_Buffer result;
+
+        ID3D12Resource* resource = nullptr;
+
+        D3D12_HEAP_TYPE heap_type = ToD3D12HeapType(desc.heap_kind);
+
+        CD3DX12_HEAP_PROPERTIES heap_prop = CD3DX12_HEAP_PROPERTIES(heap_type);
+        D3D12_HEAP_FLAGS heap_flags       = D3D12_HEAP_FLAG_NONE; // @Temporary: Who knows...
+        CD3DX12_RESOURCE_DESC res_desc    = CD3DX12_RESOURCE_DESC::Buffer(desc.size);
+        D3D12_RESOURCE_STATES init_state  = D3D12_RESOURCE_STATE_COMMON;
+
+        device->m_device->CreateCommittedResource(&heap_prop, heap_flags, &res_desc, init_state, nullptr, IID_PPV_ARGS(&resource));
+
+        result.m_resource    = resource;
+        result.m_gpu_address = resource->GetGPUVirtualAddress();
+        result.m_size        = desc.size;
+        result.m_state       = init_state;
+
+        return result;
+    }
+
+    ENGINE_API void DX12_Free(DX12_Buffer buffer)
+    {
+        buffer.m_resource->Release();
+    }
+
+    ENGINE_API void* DX12_Map(DX12_Buffer buffer)
+    {
+        void *ptr = nullptr;
+        D3D12_RANGE read_range(0, 0); // @Temporary: No read.
+        UINT subresource = 0;
+        buffer.m_resource->Map(subresource, &read_range, &ptr);
+        return ptr;
+    }
+
+    ENGINE_API void DX12_Unmap(DX12_Buffer buffer)
+    {
+        D3D12_RANGE range(0, buffer.m_size);
+        UINT subresource = 0;
+        buffer.m_resource->Unmap(subresource, &range);
+    }
+
+    ENGINE_API DX12_Texture DX12_AllocTexture(DX12_Device* device, DX12_TextureDesc tex_desc)
+    {
+        DX12_Texture result = {};
+
+        D3D12_RESOURCE_DESC res_desc = {
+            .Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            .Alignment        = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
+            .Width            = tex_desc.width,
+            .Height           = tex_desc.height,
+            .DepthOrArraySize = tex_desc.depth,
+            .MipLevels        = tex_desc.mip_levels,
+            .Format           = tex_desc.format,
+            .SampleDesc = {
+                .Count   = 1,
+                .Quality = 0
+            },
+            .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+            .Flags = D3D12_RESOURCE_FLAG_NONE
+        };
+
+        D3D12_HEAP_PROPERTIES heap_prop = {
+            .Type                 = D3D12_HEAP_TYPE_DEFAULT,
+            .CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+            .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+            .CreationNodeMask     = 1,
+            .VisibleNodeMask      = 1
+        };
+
+        ID3D12Resource* res = nullptr;
+        D3D12_RESOURCE_STATES init_state = D3D12_RESOURCE_STATE_COPY_DEST;
+        CORE_ASSERT(SUCCEEDED(device->m_device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &res_desc, init_state, nullptr, IID_PPV_ARGS(&res))));
+
+        result.m_resource = res;
+        result.m_desc     = tex_desc;
+        result.m_state    = init_state;
+
+        return result;
+    }
+
+    ENGINE_API void DX12_ReleaseTexture(DX12_Texture tex)
+    {
+        if (tex.m_resource) {
+            tex.m_resource->Release();
+        }
+    }
+
+    ENGINE_API uint64 DX12_GetRequiredIntermediateSize(DX12_Device* device, DX12_Texture tex)
+    {
+        uint64 result = 0;
+
+        uint first_subresource = 0;
+        uint num_subresources = tex.m_desc.depth * tex.m_desc.mip_levels; // @Todo: Correct?
+
+        auto res_desc = tex.m_resource->GetDesc();
+        device->m_device->GetCopyableFootprints(&res_desc, first_subresource, num_subresources, 0, nullptr, nullptr, nullptr, &result);
+
+        return result;
+    }
+
+    ENGINE_API bool DX12_InitPipeline(DX12_Device* device, DX12_Pipeline* pipeline,
+                                      DXIL::CompiledShader* vs, DXIL::CompiledShader* ps,
+                                      ID3D12RootSignature* root_signature,
+                                      D3D12_INPUT_ELEMENT_DESC* input_element_descs, uint32_t num_input_element_descs)
+    {
+        if (pipeline)
+        {
+            D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = {
+                .pRootSignature = root_signature,
+
+                .VS = {
+                    .pShaderBytecode = vs->bytes,
+                    .BytecodeLength  = vs->length
+                },
+                .PS = {
+                    .pShaderBytecode = ps->bytes,
+                    .BytecodeLength  = ps->length
+                },
+
+                .BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT), // @Temporary
+                .SampleMask = 0xff,
+                .RasterizerState = {
+                    .FillMode              = D3D12_FILL_MODE_SOLID,
+                    .CullMode              = D3D12_CULL_MODE_BACK,
+                    .FrontCounterClockwise = TRUE,
+                    .DepthBias             = 0,
+                    .DepthBiasClamp        = 0.f, 
+                    .SlopeScaledDepthBias  = 0.f,
+                    .DepthClipEnable       = TRUE,
+                    .MultisampleEnable     = FALSE,
+                    .AntialiasedLineEnable = FALSE,
+                    .ForcedSampleCount     = 0,
+                    .ConservativeRaster    = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
+                },
+                .DepthStencilState = {
+                    .DepthEnable   = FALSE,
+                    //D3D12_DEPTH_WRITE_MASK DepthWriteMask;
+                    //D3D12_COMPARISON_FUNC DepthFunc;
+                    .StencilEnable = FALSE, 
+                    //UINT8 StencilReadMask;
+                    //UINT8 StencilWriteMask;
+                    //D3D12_DEPTH_STENCILOP_DESC FrontFace;
+                    //D3D12_DEPTH_STENCILOP_DESC BackFace;
+                },
+                .InputLayout = {
+                    .pInputElementDescs = input_element_descs,
+                    .NumElements = num_input_element_descs
+                },
+                .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+                
+                .SampleDesc = {
+                    .Count = 1,
+                    .Quality = 0
+                },
+
+                // .CachedPSO;
+                
+                .Flags = D3D12_PIPELINE_STATE_FLAG_NONE // @Study: D3D12_PIPELINE_STATE_FLAG_TOOL_DEBUG
+            };
+            // @Temporary
+            pso_desc.NumRenderTargets = 1;
+            pso_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+            //pso_desc.DSVFormat = ;
+
+            HRESULT hr = device->m_device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&pipeline->m_pso));
+            CORE_ASSERT(SUCCEEDED(hr));
+
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    ENGINE_API void DX12_DeinitPipeline(DX12_Pipeline* pipeline)
+    {
+        pipeline->m_pso->Release();
     }
 }

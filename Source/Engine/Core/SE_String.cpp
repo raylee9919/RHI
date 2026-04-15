@@ -1,6 +1,6 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-#include "Core_String.h"
+#include "SE_String.h"
 #include "ThirdParty/stb/Include/stb_sprintf.h"
 
 #include <cstdarg>

@@ -22,6 +22,14 @@ namespace Engine
         RHI_DESCRIPTOR_KIND_DSV         = 4,
     };
 
+    enum RHI_HeapKind
+    {
+        RHI_HEAP_KIND_INVALID   = 0,
+        RHI_HEAP_KIND_DEFAULT   = 1, // No CPU access. Best bandwidth.
+        RHI_HEAP_KIND_UPLOAD    = 2, // Optimized for uploading to the GPU.
+        RHI_HEAP_KIND_READBACK  = 3, // Suitable for things like screenshot read back to the CPU.
+    };
+
     struct RHI_Device
     {
         RHI_Kind kind;

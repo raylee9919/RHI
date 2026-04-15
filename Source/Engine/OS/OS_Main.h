@@ -8,5 +8,10 @@ extern int ENGINE_MAIN(int argc, const char** argv);
 
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
+    (void)hInstance;
+    (void)hPrevInstance;
+    (void)lpCmdLine;
+    (void)nShowCmd;
+
     return ENGINE_MAIN(__argc, (const char**)__argv);
 }

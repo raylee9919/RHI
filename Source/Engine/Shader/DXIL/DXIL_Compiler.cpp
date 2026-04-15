@@ -1,6 +1,6 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-#include "Core/Core_String.h"
+#include "Core/SE_String.h"
 #include "Core/Core_Log.h"
 #include "Core/Core_Array.h"
 
@@ -49,11 +49,13 @@ namespace Engine
             }
         }
 
-        ENGINE_API CompileResult CompileShader(Compiler* compiler, HLSL_Shader& hlsl, bool debug)
+        ENGINE_API CompiledShader CompileShader(Compiler* compiler, bool debug, 
+                                                void* hlsl_source, uint64_t size, 
+                                                const String& entry, const String& target_profile)
         {
             DxcBuffer source_buffer = {
-                .Ptr = (LPCVOID)hlsl.source,
-                .Size = (UINT32)hlsl.length,
+                .Ptr = hlsl_source,
+                .Size = size,
                 .Encoding = 0u
             };
 
@@ -64,10 +66,10 @@ namespace Engine
             ID3D12ShaderReflection* d3d12_reflection = nullptr;
 
             WCHAR entry_point_wcstr[512] = {};
-            swprintf_s(entry_point_wcstr, 512, L"%hs", hlsl.entry.c_str());
+            swprintf_s(entry_point_wcstr, 512, L"%hs", entry.c_str());
 
             WCHAR target_profile_wcstr[512] = {};
-            swprintf_s(target_profile_wcstr, 512, L"%hs", hlsl.target_profile.c_str());
+            swprintf_s(target_profile_wcstr, 512, L"%hs", target_profile.c_str());
 
             // Pack arguments.
             Array<LPCWCHAR> arguments;
@@ -145,7 +147,7 @@ namespace Engine
 
             // Prepare struct that'll be returned.
             //
-            CompileResult result = {};
+            CompiledShader result = {};
             {
                 uint64_t len = shader_obj->GetBufferSize();
                 result.length = len;
@@ -177,17 +179,28 @@ namespace Engine
 
                 case D3D_REGISTER_COMPONENT_FLOAT32:
                 {
-                    if (mask == 0x1) {
-                        format = DXGI_FORMAT_R32_FLOAT;
-                    } else if (mask == 0x3) {
-                        format = DXGI_FORMAT_R32G32_FLOAT;
-                    } else if (mask == 0x7) {
-                        format = DXGI_FORMAT_R32G32B32_FLOAT;
-                    } else if (mask == 0xf) {
-                        format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-                    }
+                    if      (mask == 0x1) { format = DXGI_FORMAT_R32_FLOAT;          }
+                    else if (mask == 0x3) { format = DXGI_FORMAT_R32G32_FLOAT;       }
+                    else if (mask == 0x7) { format = DXGI_FORMAT_R32G32B32_FLOAT;    }
+                    else if (mask == 0xf) { format = DXGI_FORMAT_R32G32B32A32_FLOAT; }
                 } break;
-                
+
+                case D3D_REGISTER_COMPONENT_UINT32:
+                {
+                    if      (mask == 0x1) { format = DXGI_FORMAT_R32_UINT;            }
+                    else if (mask == 0x3) { format = DXGI_FORMAT_R32G32_UINT;         }
+                    else if (mask == 0x7) { format = DXGI_FORMAT_R32G32B32_UINT;      }
+                    else if (mask == 0xf) { format = DXGI_FORMAT_R32G32B32A32_UINT;   }
+                } break;
+
+                case D3D_REGISTER_COMPONENT_SINT32:
+                {
+                    if      (mask == 0x1) { format = DXGI_FORMAT_R32_SINT;            }
+                    else if (mask == 0x3) { format = DXGI_FORMAT_R32G32_SINT;         }
+                    else if (mask == 0x7) { format = DXGI_FORMAT_R32G32B32_SINT;      }
+                    else if (mask == 0xf) { format = DXGI_FORMAT_R32G32B32A32_SINT;   }
+                } break;
+
                 INVALID_DEFAULT_CASE;
             }
 

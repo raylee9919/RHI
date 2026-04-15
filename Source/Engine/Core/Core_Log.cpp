@@ -1,7 +1,7 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
 #include "Core_Log.h"
-#include "Core_String.h"
+#include "SE_String.h"
 
 #include <cstdarg>
 

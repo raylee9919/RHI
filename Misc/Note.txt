@@ -224,3 +224,36 @@
     So far, it's going well.
 
 
+    Designated Initializer
+
+            I found designated initializer super handy. Say you want a 'CreateTexture()' function.
+            You can go with N parameters like: 
+
+                CreateTexture(int width, int height, Format format)
+
+            But there's a chance you would like to add more parameters, especially when you are 
+            exploring how things will be layed out. So what I would do instead is something like:
+
+                CreateTexture(TextureDesc desc).
+
+            Combining with designated initalizer, on the client side, you could write something like:
+
+                CreateTexture({
+                    .width = 1024,
+                    .height = 1024,
+                    .format = RGBA8_UNORM
+                });
+
+            If you want additional parameters afterwards, you just add it to the initializer!
+
+                CreateTexture({
+                    .width = 1024,
+                    .height = 1024,
+                    .format = RGBA8_UNORM
+                    .name = "MaterialAlbedo"  <---
+                });
+
+            You don't have to change the function signature, and combining with the defualt value,
+            it won't break anything! Also, there's no ordering constraint which default arguments have in C++.
+
+

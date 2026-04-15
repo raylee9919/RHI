@@ -26,7 +26,7 @@ namespace Engine
             IDxcUtils*     m_utils;
         };
 
-        struct CompileResult
+        struct CompiledShader
         {
             uint8_t* bytes;
             uint64_t length;
@@ -37,7 +37,7 @@ namespace Engine
         ENGINE_API bool InitCompiler(Compiler* compiler);
         ENGINE_API void DeinitCompiler(Compiler* compiler);
 
-        [[nodiscard]] ENGINE_API CompileResult CompileShader(Compiler* compiler, HLSL_Shader& hlsl, bool debug);
+        [[nodiscard]] ENGINE_API CompiledShader CompileShader(Compiler* compiler, bool debug, void* hlsl_source, uint64_t size, const String& entry, const String& target_profile);
 
 
         [[nodiscard]] ENGINE_API DXGI_FORMAT ToDXGIFormat(D3D_REGISTER_COMPONENT_TYPE type, BYTE mask);

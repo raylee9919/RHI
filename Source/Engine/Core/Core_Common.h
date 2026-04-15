@@ -6,6 +6,14 @@
 #include <type_traits>
 #include <bit>
 
+typedef int8_t          int8;
+typedef int16_t        int16;
+typedef int32_t        int32;
+typedef int64_t        int64;
+typedef uint8_t        uint8;
+typedef uint16_t      uint16;
+typedef uint32_t      uint32;
+typedef uint64_t      uint64;
 typedef int8_t           s8;
 typedef int16_t         s16;
 typedef int32_t         s32;
@@ -18,9 +26,27 @@ typedef s8               b8;
 typedef s16             b16;
 typedef s32             b32;
 typedef unsigned int    uint;
+typedef float  f32;
+typedef double f64;
 
 #define INTERNAL static
 #define INVALID_DEFAULT_CASE default: CORE_ASSERT(!"invalid default case") 
+#define CONCAT(A, B) A##B
+#define CONCAT2(A, B) CONCAT(A, B)
+
+template <typename F>
+struct Scope_Exit {
+    Scope_Exit(F f) : f(f) {}
+    ~Scope_Exit() { f(); }
+    F f;
+};
+template <typename F>
+Scope_Exit<F> scope_exit_make(F f) {
+    return Scope_Exit<F>(f);
+};
+#define Defer(code) \
+    auto CONCAT2(scope_exit_, __LINE__) = scope_exit_make([=](){code;})
+
 
 #if PLATFORM_WINDOWS
 #  define CORE_ASSERT(exp, ...) if (!(exp)) { __debugbreak(); }
