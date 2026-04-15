@@ -168,7 +168,6 @@ int ENGINE_MAIN(int argc, const char** argv)
             }
         }
 
-
         // Create PSO.
         DX12_InitPipeline(device, pipeline, &vs_module, &ps_module, device->m_global_root_signature, input_element_descs.data(), input_element_descs.size());
     }
@@ -187,9 +186,10 @@ int ENGINE_MAIN(int argc, const char** argv)
         // Create buffer.
         //
         Vertex vertices[] = {
-            {{-0.5f, -0.5f,  0.0f}, {-1.0f, 1.0f}},
+            {{-0.5f, -0.5f,  0.0f}, { 0.0f, 1.0f}},
             {{ 0.5f, -0.5f,  0.0f}, { 1.0f, 1.0f}},
-            {{ 0.0f,  0.5f,  0.0f}, { 0.5f, 0.0f}}
+            {{-0.5f,  0.5f,  0.0f}, { 0.0f, 0.0f}},
+            {{ 0.5f,  0.5f,  0.0f}, { 1.0f, 0.0f}}
         };
         u64 num_vertices = ARRAY_COUNT(vertices);
         u64 sz = sizeof(vertices);
@@ -218,6 +218,7 @@ int ENGINE_MAIN(int argc, const char** argv)
         DX12_PlaceFence(cmd_queue, fence);
         DX12_WaitForFence(fence);
 
+
         // Create srv.
         //
         CD3DX12_SHADER_RESOURCE_VIEW_DESC desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::StructuredBuffer(num_vertices, stride);
@@ -226,6 +227,41 @@ int ENGINE_MAIN(int argc, const char** argv)
         // Cleanup
         //
         DX12_Free(staging_buffer);
+    }
+
+    // Create index buffer.
+    //
+    DX12_Buffer index_buffer;
+    {
+        u32 indices[] = {
+            0, 1, 2,
+            3, 2, 1
+        };
+        u64 num_indices = ARRAY_COUNT(indices);
+        u64 sz = sizeof(indices);
+
+        index_buffer = DX12_Malloc(device, {.size = sz, .heap_kind = RHI_HEAP_KIND_DEFAULT});
+
+        u64 staging_buffer_size = GetRequiredIntermediateSize(vertex_buffer.m_resource, 0, 1);
+        auto staging_buffer = DX12_Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
+
+        void* ptr = DX12_Map(staging_buffer);
+        memcpy(ptr, indices, sz);
+        DX12_Unmap(staging_buffer);
+
+        DX12_BeginCommandList(cmd_list);
+        {
+            auto prev1 = DX12_CMD_TransitionBarrier(cmd_list, &index_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
+            auto prev2 = DX12_CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            DX12_CMD_Copy(cmd_list, index_buffer, staging_buffer, sz);
+            DX12_CMD_TransitionBarrier(cmd_list, &index_buffer, prev1);
+            DX12_CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
+        }
+        DX12_EndCommandList(cmd_list);
+        DX12_ExecuteCommandList(cmd_queue, cmd_list);
+
+        DX12_PlaceFence(cmd_queue, fence);
+        DX12_WaitForFence(fence);
     }
 
     // @Temporary: Create texture and view.
@@ -300,16 +336,16 @@ int ENGINE_MAIN(int argc, const char** argv)
     DX12_Descriptor sampler = DX12_AllocDescriptor(sampler_heap);
     {
         D3D12_SAMPLER_DESC sampler_desc = {
-            .Filter = D3D12_FILTER_MIN_MAG_POINT_MIP_LINEAR,
-            .AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            .AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            .AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            .MipLODBias = 0.0f,
-            .MaxAnisotropy = 1,
+            .Filter         = D3D12_FILTER_MIN_MAG_POINT_MIP_LINEAR,
+            .AddressU       = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+            .AddressV       = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+            .AddressW       = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+            .MipLODBias     = 0.0f,
+            .MaxAnisotropy  = 1,
             .ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER,
-            .BorderColor = {0.0f, 0.0f, 0.0f, 0.0f},
-            .MinLOD = 0.0f,
-            .MaxLOD = D3D12_FLOAT32_MAX
+            .BorderColor    = {0.0f, 0.0f, 0.0f, 0.0f},
+            .MinLOD         = 0.0f,
+            .MaxLOD         = D3D12_FLOAT32_MAX
         };
         device->m_device->CreateSampler(&sampler_desc, sampler.cpu_handle);
     }
@@ -317,6 +353,8 @@ int ENGINE_MAIN(int argc, const char** argv)
 
 
 
+    // @Todo: Is there a way to reflect PushConstant from shader to CPP side?
+    //
     struct PushConstant
     {
         u32 vertex_buffer_index;
@@ -359,7 +397,8 @@ int ENGINE_MAIN(int argc, const char** argv)
 
                 cmd_list->m_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-                DX12_CMD_Draw(cmd_list, 3, 1, 0, 0);
+                DX12_CMD_SetIndexBuffer(cmd_list, index_buffer);
+                DX12_CMD_DrawIndexed(cmd_list, 6, 1); // @Temporary
             }
 
             DX12_CMD_TransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);

@@ -159,8 +159,9 @@ namespace Engine
     ENGINE_API void DX12_CMD_TransitionBarrier(DX12_CommandList* cmd_list, ID3D12Resource* resource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
     ENGINE_API D3D12_RESOURCE_STATES DX12_CMD_TransitionBarrier(DX12_CommandList* cmd_list, DX12_Buffer* buffer, D3D12_RESOURCE_STATES state);
     ENGINE_API void DX12_CMD_Draw(DX12_CommandList* cmd_list, uint32_t num_vertices, uint32_t num_instances, uint32_t first_vertex, uint32_t first_instance);
+    ENGINE_API void DX12_CMD_DrawIndexed(DX12_CommandList* cmd_list, uint num_indices_per_instance, uint num_instances);
     ENGINE_API void DX12_CMD_SetGraphicsConstants(DX12_CommandList* cmd_list, void* data, uint64_t size);
-    ENGINE_API void DX12_CMD_SetIndexBuffer(DX12_CommandList* cmd_list, DX12_Buffer* buffer);
+    ENGINE_API void DX12_CMD_SetIndexBuffer(DX12_CommandList* cmd_list, DX12_Buffer buffer);
 
 
     ENGINE_API DX12_Buffer DX12_Malloc(DX12_Device* device, DX12_BufferDesc desc);

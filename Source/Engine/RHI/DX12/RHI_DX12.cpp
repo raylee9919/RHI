@@ -616,16 +616,24 @@ namespace Engine
         cmd_list->m_list->DrawInstanced(num_vertices, num_instances, first_vertex, first_instance);
     }
 
+    ENGINE_API void DX12_CMD_DrawIndexed(DX12_CommandList* cmd_list, uint num_indices_per_instance, uint num_instances)
+    {
+        uint start_index = 0;
+        uint base_vertex = 0;
+        uint start_instance = 0;
+        cmd_list->m_list->DrawIndexedInstanced(num_indices_per_instance, num_instances, start_index, base_vertex, start_instance);
+    }
+
     ENGINE_API void DX12_CMD_SetGraphicsConstants(DX12_CommandList* cmd_list, void* data, uint64_t size)
     {
         cmd_list->m_list->SetGraphicsRoot32BitConstants(0, (size >> 2), data, 0);
     }
 
-    ENGINE_API void DX12_CMD_SetIndexBuffer(DX12_CommandList* cmd_list, DX12_Buffer* buffer)
+    ENGINE_API void DX12_CMD_SetIndexBuffer(DX12_CommandList* cmd_list, DX12_Buffer buffer)
     {
         D3D12_INDEX_BUFFER_VIEW view = {
-            .BufferLocation = buffer->m_gpu_address,
-            .SizeInBytes = (UINT)buffer->m_size,
+            .BufferLocation = buffer.m_gpu_address,
+            .SizeInBytes = (UINT)buffer.m_size,
             .Format = DXGI_FORMAT_R32_UINT
         };
         cmd_list->m_list->IASetIndexBuffer(&view);
