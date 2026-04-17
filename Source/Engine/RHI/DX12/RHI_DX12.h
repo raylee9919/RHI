@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "Core/Core_Common.h"
+#include "Core/SE_Basics.h"
 
 #include "RHI/RHI.h"
 

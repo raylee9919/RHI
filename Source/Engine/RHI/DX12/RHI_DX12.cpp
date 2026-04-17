@@ -1,6 +1,6 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-#include "Core/Core_Common.h"
+#include "Core/SE_Basics.h"
 #include "Core/Core_Log.h"
 
 #include "RHI_DX12.h"

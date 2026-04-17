@@ -1,6 +1,6 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-#include "Core_Common.h"
+#include "SE_Basics.h"
 
 #if _MSC_VER
 #  include <intrin.h>

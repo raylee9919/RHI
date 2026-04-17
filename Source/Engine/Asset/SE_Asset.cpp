@@ -109,6 +109,8 @@ namespace Engine
                     // @Todo
                     vert.tangent = vec4(1.f, 0.f, 0.f, 0.f);
                 }
+
+                aabb.Expand(vert.position);
             }
 
             // Process indices.
@@ -205,16 +207,16 @@ namespace Engine
         cgltf_data* data = nullptr;
 
         if (cgltf_parse_file(&opt, path.c_str(), &data) != cgltf_result_success) {
-            return nullptr;
             Log("Failed to load gltf.");
+            return nullptr;
         }
 
         if (cgltf_load_buffers(&opt, data, path.c_str()) != cgltf_result_success) {
-            return nullptr;
             Log("Failed to load gltf buffer.");
+            return nullptr;
         }
 
-        uint num_scenes = data->scenes_count;
+        uint num_scenes = (uint)data->scenes_count;
         if (num_scenes == 0) {
             return nullptr;
         }
@@ -225,7 +227,7 @@ namespace Engine
         {
             cgltf_scene* scene = &data->scenes[sci];
 
-            uint num_nodes = scene->nodes_count;
+            uint num_nodes = (uint)scene->nodes_count;
             for (uint ni = 0; ni < num_nodes; ++ni) 
             {
                 cgltf_node* node = scene->nodes[ni];
