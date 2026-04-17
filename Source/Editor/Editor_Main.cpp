@@ -1,11 +1,11 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-#include "Core/Core_Array.h"
+#include "Core/SE_Array.h"
 
 #include "Window/Window.h"
 #include "OS/OS_Main.h"
 #include "IO/IO.h"
-#include "Asset/Asset.h"
+#include "Asset/SE_Asset.h"
 
 #include "RHI/DX12/RHI_DX12.h"
 #include "Shader/DXIL/DXIL_Compiler.h"
@@ -38,10 +38,10 @@ int ENGINE_MAIN(int argc, const char** argv)
     DX12_InitDescriptorHeap(device, rtv_heap, 53, RHI_DESCRIPTOR_KIND_RTV);
 
     DX12_DescriptorHeap* cbv_srv_uav_heap = new DX12_DescriptorHeap;
-    DX12_InitDescriptorHeap(device, cbv_srv_uav_heap, 256, Engine::RHI_DESCRIPTOR_KIND_CBV_SRV_UAV);
+    DX12_InitDescriptorHeap(device, cbv_srv_uav_heap, 256, RHI_DESCRIPTOR_KIND_CBV_SRV_UAV);
 
     DX12_DescriptorHeap* sampler_heap = new DX12_DescriptorHeap;
-    DX12_InitDescriptorHeap(device, sampler_heap, 256, Engine::RHI_DESCRIPTOR_KIND_SAMPLER);
+    DX12_InitDescriptorHeap(device, sampler_heap, 256, RHI_DESCRIPTOR_KIND_SAMPLER);
 
     HWND hwnd = (HWND)window->GetPlatformWindow();
     uint width  = 1920;
@@ -61,6 +61,11 @@ int ENGINE_MAIN(int argc, const char** argv)
 #if BUILD_DEBUG
     is_debug = true;
 #endif
+
+    // @Temporary: Load model
+    //
+    SceneComponent* sponza = LoadGLTF("C:/dev/swl/Untitled/Data/Model/Sponza/Sponza.gltf");
+
 
     // Load HLSL asset.
     //
@@ -185,15 +190,10 @@ int ENGINE_MAIN(int argc, const char** argv)
     {
         // Create buffer.
         //
-        Vertex vertices[] = {
-            {{-0.5f, -0.5f,  0.0f}, { 0.0f, 1.0f}},
-            {{ 0.5f, -0.5f,  0.0f}, { 1.0f, 1.0f}},
-            {{-0.5f,  0.5f,  0.0f}, { 0.0f, 0.0f}},
-            {{ 0.5f,  0.5f,  0.0f}, { 1.0f, 0.0f}}
-        };
-        u64 num_vertices = ARRAY_COUNT(vertices);
-        u64 sz = sizeof(vertices);
+        auto& vertices = sponza->children[0]->meshes[0]->vertices;
+        u64 num_vertices = vertices.size();
         u64 stride = sizeof(vertices[0]);
+        u64 sz = num_vertices * stride;
 
         vertex_buffer = DX12_Malloc(device, {.size = sz, .heap_kind = RHI_HEAP_KIND_DEFAULT});
 
@@ -201,7 +201,7 @@ int ENGINE_MAIN(int argc, const char** argv)
         auto staging_buffer = DX12_Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
 
         void* ptr = DX12_Map(staging_buffer);
-        memcpy(ptr, vertices, sz);
+        memcpy(ptr, vertices.data(), sz);
         DX12_Unmap(staging_buffer);
 
         DX12_BeginCommandList(cmd_list);
@@ -233,12 +233,9 @@ int ENGINE_MAIN(int argc, const char** argv)
     //
     DX12_Buffer index_buffer;
     {
-        u32 indices[] = {
-            0, 1, 2,
-            3, 2, 1
-        };
-        u64 num_indices = ARRAY_COUNT(indices);
-        u64 sz = sizeof(indices);
+        auto& indices = sponza->children[0]->meshes[0]->indices;
+        u64 num_indices = indices.size();
+        u64 sz = num_indices * sizeof(indices[0]);
 
         index_buffer = DX12_Malloc(device, {.size = sz, .heap_kind = RHI_HEAP_KIND_DEFAULT});
 
@@ -246,7 +243,7 @@ int ENGINE_MAIN(int argc, const char** argv)
         auto staging_buffer = DX12_Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
 
         void* ptr = DX12_Map(staging_buffer);
-        memcpy(ptr, indices, sz);
+        memcpy(ptr, indices.data(), sz);
         DX12_Unmap(staging_buffer);
 
         DX12_BeginCommandList(cmd_list);
@@ -398,7 +395,7 @@ int ENGINE_MAIN(int argc, const char** argv)
                 cmd_list->m_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
                 DX12_CMD_SetIndexBuffer(cmd_list, index_buffer);
-                DX12_CMD_DrawIndexed(cmd_list, 6, 1); // @Temporary
+                DX12_CMD_DrawIndexed(cmd_list, sponza->children[0]->meshes[0]->indices.size(), 1); // @Temporary
             }
 
             DX12_CMD_TransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);

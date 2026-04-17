@@ -3,7 +3,9 @@
 struct Vertex
 {
     float3 position;
+    float3 normal;
     float2 uv;
+    float4 tangent;
 };
 
 struct BindlessConstants
@@ -17,7 +19,9 @@ ConstantBuffer<BindlessConstants> bindless : register(b0);
 struct PS_Input
 {
     float4 position : SV_POSITION;
+    float3 normal   : NORMAL;
     float2 uv       : UV;
+    float4 tangent  : TANGENT;
 };
 
 PS_Input VS_Main(uint vertex_id : SV_VertexID)
@@ -29,6 +33,9 @@ PS_Input VS_Main(uint vertex_id : SV_VertexID)
 
     result.position = float4(vert.position, 1.0);
     result.uv = vert.uv;
+    result.normal = vert.normal;
+    result.uv = vert.uv;
+    result.tangent = vert.tangent;
 
     return result;
 }

@@ -115,6 +115,8 @@ namespace Engine
     // Returns first encountered set bit's index (zero-indexed).
     // If not found, return 32.
     ENGINE_API uint32_t BitScanFromLSB(uint32_t x);
+
+
+    static const f32 F32_MAX = 3.402823e+38f;
+    static const f32 F32_MIN = -3.402823e+38f;
 }
-
-
