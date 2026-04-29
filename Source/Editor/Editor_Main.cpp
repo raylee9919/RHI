@@ -9,6 +9,7 @@
 
 #include "RHI/DX12/RHI_DX12.h"
 #include "Shader/DXIL/DXIL_Compiler.h"
+#include "Renderer/Renderer.h"
 
 #include "ThirdParty/DirectX/Include/d3d12.h"
 #include "ThirdParty/DirectX/Include/d3dx12/d3dx12.h"
@@ -17,17 +18,63 @@
 
 using namespace Engine;
 using namespace DXIL;
+using namespace DX12;
+using namespace Renderer;
 
-// @Temporary: Camera
-//
-struct Camera 
+
+Array<D3D12_INPUT_ELEMENT_DESC> 
+dx12ReflectInputParameters(ID3D12ShaderReflection* reflection)
 {
-    m4x4 view;
-    m4x4 proj;
-    m4x4 view_proj;
+    D3D12_SHADER_DESC desc;
+    reflection->GetDesc(&desc);
 
-    vec4 position;
-};
+    uint num_input_params = desc.InputParameters;
+    Array <D3D12_INPUT_ELEMENT_DESC> input_element_descs(num_input_params);
+
+    for (uint i = 0; i < num_input_params; ++i)
+    {
+        D3D12_SIGNATURE_PARAMETER_DESC desc;
+        reflection->GetInputParameterDesc(i, &desc);
+
+        D3D12_INPUT_ELEMENT_DESC input_element_desc = {
+            .SemanticName      = desc.SemanticName,
+            .SemanticIndex     = desc.SemanticIndex,
+            .Format            = ToDXGIFormat(desc.ComponentType, desc.Mask),
+            .InputSlot         = 0u, // @Todo: wtf is this.
+            .AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT,
+            .InputSlotClass    = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+
+            // @Todo: This might be an issue when doing instanced rendering.
+            .InstanceDataStepRate = 0
+        };
+
+        input_element_descs[i] = input_element_desc;
+    }
+
+    return input_element_descs;
+}
+
+Intermediate_Pipeline_State
+dx12CreateIntermediatePipelineState(DXIL::Compiler* compiler, String& path, bool is_debug)
+{
+    Intermediate_Pipeline_State result = {};
+
+    u8* src = nullptr;
+    u64 sz = 0;
+
+    sz = IO::ReadEntireFile(path, nullptr);
+    src = new u8[sz];
+    IO::ReadEntireFile(path, src);
+
+    CompiledShader vs_module = CompileShader(compiler, is_debug, src, sz, "VS_Main", "vs_6_6");
+    CompiledShader ps_module = CompileShader(compiler, is_debug, src, sz, "PS_Main", "ps_6_6");
+
+    result.vs_module        = vs_module;
+    result.ps_module        = ps_module;
+    result.input_parameters = dx12ReflectInputParameters(vs_module.reflection);
+
+    return result;
+}
 
 int ENGINE_MAIN(int argc, const char** argv)
 {
@@ -36,34 +83,33 @@ int ENGINE_MAIN(int argc, const char** argv)
 
     Window* window = Window::Create("Hello", 1920, 1080);
 
-    DX12_Device* device = new DX12_Device;
-    DX12_InitDevice(device, true);
+    Device* device = new Device;
+    InitDevice(device, true);
 
-    DX12_CommandQueue* cmd_queue = new DX12_CommandQueue;
-    DX12_InitCommandQueue(device, cmd_queue);
+    CommandQueue* cmd_queue = new CommandQueue;
+    InitCommandQueue(device, cmd_queue);
 
-    DX12_CommandList* cmd_list = new DX12_CommandList;
-    DX12_InitCommandList(device, cmd_list, D3D12_COMMAND_LIST_TYPE_DIRECT);
+    CommandList* cmd_list = new CommandList;
+    InitCommandList(device, cmd_list, D3D12_COMMAND_LIST_TYPE_DIRECT);
 
-    DX12_DescriptorHeap* rtv_heap = new DX12_DescriptorHeap;
-    DX12_InitDescriptorHeap(device, rtv_heap, 53, RHI_DESCRIPTOR_KIND_RTV);
+    DescriptorHeap* rtv_heap = new DescriptorHeap;
+    InitDescriptorHeap(device, rtv_heap, 53, RHI_DESCRIPTOR_KIND_RTV);
 
-    DX12_DescriptorHeap* cbv_srv_uav_heap = new DX12_DescriptorHeap;
-    DX12_InitDescriptorHeap(device, cbv_srv_uav_heap, 256, RHI_DESCRIPTOR_KIND_CBV_SRV_UAV);
+    DescriptorHeap* cbv_srv_uav_heap = new DescriptorHeap;
+    InitDescriptorHeap(device, cbv_srv_uav_heap, 256, RHI_DESCRIPTOR_KIND_CBV_SRV_UAV);
 
-    DX12_DescriptorHeap* sampler_heap = new DX12_DescriptorHeap;
-    DX12_InitDescriptorHeap(device, sampler_heap, 256, RHI_DESCRIPTOR_KIND_SAMPLER);
+    DescriptorHeap* sampler_heap = new DescriptorHeap;
+    InitDescriptorHeap(device, sampler_heap, 256, RHI_DESCRIPTOR_KIND_SAMPLER);
 
     HWND hwnd = (HWND)window->GetPlatformWindow();
     uint width  = 1920;
     uint height = 1080;
     uint num_frames = 3;
-    DX12_SwapChain* swap_chain = new DX12_SwapChain;
-    DX12_InitSwapChain(device, swap_chain, rtv_heap, cmd_queue, hwnd, width, height, num_frames);
+    SwapChain* swap_chain = new SwapChain;
+    InitSwapChain(device, swap_chain, rtv_heap, cmd_queue, hwnd, width, height, num_frames);
 
-    DX12_Fence* fence = new DX12_Fence;
-    DX12_InitFence(device, fence);
-
+    Fence* fence = new Fence;
+    InitFence(device, fence);
 
     Compiler* compiler = new Compiler;
     InitCompiler(compiler);
@@ -75,7 +121,7 @@ int ENGINE_MAIN(int argc, const char** argv)
 
     // @Temporary: Camera
     //
-    Camera *camera = new Camera;
+    Camera* camera = new Camera;
     {
         vec3 position    = vec3(0.f, 3.f, 3.f);
         vec3 look_at     = vec3(0.f, 0.f, 0.f);
@@ -89,130 +135,23 @@ int ENGINE_MAIN(int argc, const char** argv)
 
     // @Temporary: Load model
     //
-    SceneComponent* sponza = LoadGLTF("C:/dev/swl/Untitled/Data/Model/Cube/Cube.gltf");
+    Scene_Component* sponza = LoadGLTF("C:/dev/swl/Untitled/Data/Model/Cube/Cube.gltf");
     CORE_ASSERT(sponza);
 
-
-    // Load HLSL asset.
-    //
-    u8* hlsl = nullptr;
-    u64 hlsl_sz = 0;
+    Pipeline_State* pipeline_state = new Pipeline_State;
     {
-        const String hlsl_path = "C:/dev/swl/Untitled/Data/Shader/HLSL/Triangle.hlsl"; // @Temporary
-        hlsl_sz = IO::ReadEntireFile(hlsl_path, nullptr);
-        hlsl = new u8[hlsl_sz];
-        IO::ReadEntireFile(hlsl_path, hlsl);
+        String path = "C:/dev/swl/Untitled/Data/Shader/HLSL/Triangle.hlsl";
+        auto intermediate_pso = dx12CreateIntermediatePipelineState(compiler, path, is_debug);
+        InitPipelineState(device, &intermediate_pso, pipeline_state);
     }
 
-    // @Todo: How should I deal with 'entry point' and 'target profile'?
-    // The general pipeline follows:
-    //      Artist writes shader with arbitrary entry point names in it.
-    //      -> The engine must know the name of the entry point to compile the shader.
-    //
-    //      So, I guess I got two options:
-    //
-    //          1. Artists feed compiler the string manually.
-    //          2. Make sort of a wrapper shader language that has builtin entry point names.
-    //
-    //          Both will go through DXC anyway, so to lighten the load of artrists, the later is more reasonable???
-    //
-    CompiledShader vs_module = CompileShader(compiler, is_debug, hlsl, hlsl_sz, "VS_Main", "vs_6_6");
-    CompiledShader ps_module = CompileShader(compiler, is_debug, hlsl, hlsl_sz, "PS_Main", "ps_6_6");
 
-    
-
-
-    // @Temporary
-    // @Temporary
-    // @Temporary
-    // @Temporary
-    // @Temporary
-    //
-    DX12_Pipeline* pipeline = new DX12_Pipeline;
-
-    {
-        D3D12_SHADER_DESC shader_desc;
-        auto r = ps_module.reflection;
-        r->GetDesc(&shader_desc);
-
-        // I need to gather root parameters to create a root signature.
-        Array<D3D12_ROOT_PARAMETER1> root_parameters;
-
-        // Create input element layout.
-        //
-        uint num_input_parameters = shader_desc.InputParameters;
-        Array<D3D12_INPUT_ELEMENT_DESC> input_element_descs(num_input_parameters);
-
-        for (uint i = 0; i < num_input_parameters; ++i)
-        {
-            D3D12_SIGNATURE_PARAMETER_DESC desc;
-            r->GetInputParameterDesc(i, &desc);
-
-            D3D12_INPUT_ELEMENT_DESC input_element_desc = {
-                .SemanticName      = desc.SemanticName,
-                .SemanticIndex     = desc.SemanticIndex,
-                .Format            = ToDXGIFormat(desc.ComponentType, desc.Mask),
-                .InputSlot         = 0u, // @Todo: wtf is this.
-                .AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT,
-                .InputSlotClass    = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-
-                // @Todo: This might be an issue when doing instanced rendering.
-                .InstanceDataStepRate = 0
-            };
-
-            input_element_descs[i] = input_element_desc;
-        }
-
-        // Create shader bound resource state..
-        //
-        for (uint i = 0; i < shader_desc.BoundResources; ++i)
-        {
-            D3D12_SHADER_INPUT_BIND_DESC shader_input_bind_desc;
-            r->GetResourceBindingDesc(i, &shader_input_bind_desc);
-
-            const D3D_SHADER_INPUT_TYPE type = shader_input_bind_desc.Type;
-
-            if (type == D3D_SIT_CBUFFER)
-            {
-                //ID3D12ShaderReflectionConstantBuffer* shader_reflection_constant_buffer = r->GetConstantBufferByIndex(i);
-                //D3D12_SHADER_BUFFER_DESC desc;
-                //shader_reflection_constant_buffer->GetDesc(&desc);
-
-                D3D12_ROOT_PARAMETER1 root_param = {
-                    .ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV,
-                    .Descriptor = {
-                        .ShaderRegister = shader_input_bind_desc.BindPoint,
-                        .RegisterSpace = shader_input_bind_desc.Space,
-                        .Flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
-                    },
-                    .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL,
-                };
-
-                root_parameters.push_back(root_param);
-            } 
-            else if (type == D3D_SIT_TEXTURE)
-            {
-            }
-            else
-            {
-                CORE_ASSERT(!"Unhandled shader input type.");
-            }
-        }
-
-        // Create PSO.
-        DX12_InitPipeline(device, pipeline, &vs_module, &ps_module, device->m_global_root_signature, input_element_descs.data(), input_element_descs.size());
-    }
-    // @Temporary
-    // @Temporary
-    // @Temporary
-    // @Temporary
-    // @Temporary
 
 
     // @Temporary: Create vertex buffer and descriptor pointing it.
     //
-    DX12_Buffer vertex_buffer;
-    DX12_Descriptor vertex_buffer_descriptor = DX12_AllocDescriptor(cbv_srv_uav_heap);
+    Buffer vertex_buffer;
+    Descriptor vertex_buffer_descriptor = AllocDescriptor(cbv_srv_uav_heap);
     {
         // Create buffer.
         //
@@ -221,28 +160,28 @@ int ENGINE_MAIN(int argc, const char** argv)
         u64 stride = sizeof(vertices[0]);
         u64 sz = num_vertices * stride;
 
-        vertex_buffer = DX12_Malloc(device, {.size = sz, .heap_kind = RHI_HEAP_KIND_DEFAULT});
+        vertex_buffer = Malloc(device, {.size = sz, .heap_kind = RHI_HEAP_KIND_DEFAULT});
 
         u64 staging_buffer_size = GetRequiredIntermediateSize(vertex_buffer.m_resource, 0, 1);
-        auto staging_buffer = DX12_Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
+        auto staging_buffer = Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
 
-        void* ptr = DX12_Map(staging_buffer);
+        void* ptr = Map(staging_buffer);
         memcpy(ptr, vertices.data(), sz);
-        DX12_Unmap(staging_buffer);
+        Unmap(staging_buffer);
 
-        DX12_BeginCommandList(cmd_list);
+        BeginCommandList(cmd_list);
         {
-            auto prev1 = DX12_CMD_TransitionBarrier(cmd_list, &vertex_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
-            auto prev2 = DX12_CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-            DX12_CMD_Copy(cmd_list, vertex_buffer, staging_buffer, sz);
-            DX12_CMD_TransitionBarrier(cmd_list, &vertex_buffer, prev1);
-            DX12_CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
+            auto prev1 = CMD_TransitionBarrier(cmd_list, &vertex_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
+            auto prev2 = CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            CMD_Copy(cmd_list, vertex_buffer, staging_buffer, sz);
+            CMD_TransitionBarrier(cmd_list, &vertex_buffer, prev1);
+            CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
         }
-        DX12_EndCommandList(cmd_list);
-        DX12_ExecuteCommandList(cmd_queue, cmd_list);
+        EndCommandList(cmd_list);
+        ExecuteCommandList(cmd_queue, cmd_list);
 
-        DX12_PlaceFence(cmd_queue, fence);
-        DX12_WaitForFence(fence);
+        PlaceFence(cmd_queue, fence);
+        WaitForFence(fence);
 
 
         // Create srv.
@@ -252,45 +191,45 @@ int ENGINE_MAIN(int argc, const char** argv)
 
         // Cleanup
         //
-        DX12_Free(staging_buffer);
+        Free(staging_buffer);
     }
 
     // Create index buffer.
     //
-    DX12_Buffer index_buffer;
+    Buffer index_buffer;
     {
         auto& indices = sponza->children[0]->meshes[0]->indices;
         u64 num_indices = indices.size();
         u64 sz = num_indices * sizeof(indices[0]);
 
-        index_buffer = DX12_Malloc(device, {.size = sz, .heap_kind = RHI_HEAP_KIND_DEFAULT});
+        index_buffer = Malloc(device, {.size = sz, .heap_kind = RHI_HEAP_KIND_DEFAULT});
 
         u64 staging_buffer_size = GetRequiredIntermediateSize(index_buffer.m_resource, 0, 1);
-        auto staging_buffer = DX12_Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
+        auto staging_buffer = Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
 
-        void* ptr = DX12_Map(staging_buffer);
+        void* ptr = Map(staging_buffer);
         memcpy(ptr, indices.data(), sz);
-        DX12_Unmap(staging_buffer);
+        Unmap(staging_buffer);
 
-        DX12_BeginCommandList(cmd_list);
+        BeginCommandList(cmd_list);
         {
-            auto prev1 = DX12_CMD_TransitionBarrier(cmd_list, &index_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
-            auto prev2 = DX12_CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-            DX12_CMD_Copy(cmd_list, index_buffer, staging_buffer, sz);
-            DX12_CMD_TransitionBarrier(cmd_list, &index_buffer, prev1);
-            DX12_CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
+            auto prev1 = CMD_TransitionBarrier(cmd_list, &index_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
+            auto prev2 = CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            CMD_Copy(cmd_list, index_buffer, staging_buffer, sz);
+            CMD_TransitionBarrier(cmd_list, &index_buffer, prev1);
+            CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
         }
-        DX12_EndCommandList(cmd_list);
-        DX12_ExecuteCommandList(cmd_queue, cmd_list);
+        EndCommandList(cmd_list);
+        ExecuteCommandList(cmd_queue, cmd_list);
 
-        DX12_PlaceFence(cmd_queue, fence);
-        DX12_WaitForFence(fence);
+        PlaceFence(cmd_queue, fence);
+        WaitForFence(fence);
     }
 
     // @Temporary: Create texture and view.
     //
-    DX12_Texture tex = {};
-    DX12_Descriptor tex_srv = DX12_AllocDescriptor(cbv_srv_uav_heap);
+    Texture tex = {};
+    Descriptor tex_srv = AllocDescriptor(cbv_srv_uav_heap);
     u32 tex_width      = 1024;
     u32 tex_height     = 1024;
     u32 tex_pitch      = tex_width * 4;
@@ -313,12 +252,12 @@ int ENGINE_MAIN(int argc, const char** argv)
     {
         // Alloc buffer for texture in GPU.
         //
-        tex = DX12_AllocTexture(device, {.width = tex_width, .height = tex_height, .depth = tex_depth, .mip_levels = tex_mip_levels, .format = tex_format});
+        tex = AllocTexture(device, {.width = tex_width, .height = tex_height, .depth = tex_depth, .mip_levels = tex_mip_levels, .format = tex_format});
 
-        u64 upload_buffer_size = DX12_GetRequiredIntermediateSize(device, tex);
-        auto upload_buffer = DX12_Malloc(device, {.size = upload_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD});
+        u64 upload_buffer_size = GetRequiredIntermediateSize(device, tex);
+        auto upload_buffer = Malloc(device, {.size = upload_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD});
 
-        DX12_BeginCommandList(cmd_list);
+        BeginCommandList(cmd_list);
         {
             // @Temporary: study copying subresourecs...
             D3D12_SUBRESOURCE_DATA data = {
@@ -327,15 +266,15 @@ int ENGINE_MAIN(int argc, const char** argv)
                 .SlicePitch = tex_pitch * tex_height
             };
             UpdateSubresources(cmd_list->m_list, tex.m_resource, upload_buffer.m_resource, 0, 0, 1, &data);
-            DX12_CMD_TransitionBarrier(cmd_list, tex.m_resource, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+            CMD_TransitionBarrier(cmd_list, tex.m_resource, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
         }
-        DX12_EndCommandList(cmd_list);
-        DX12_ExecuteCommandList(cmd_queue, cmd_list);
+        EndCommandList(cmd_list);
+        ExecuteCommandList(cmd_queue, cmd_list);
 
-        DX12_PlaceFence(cmd_queue, fence);
-        DX12_WaitForFence(fence);
+        PlaceFence(cmd_queue, fence);
+        WaitForFence(fence);
 
-        DX12_Free(upload_buffer);
+        Free(upload_buffer);
 
 
         // Create a view.
@@ -356,7 +295,7 @@ int ENGINE_MAIN(int argc, const char** argv)
 
     // @Temporary: Create a sampler.
     //
-    DX12_Descriptor sampler = DX12_AllocDescriptor(sampler_heap);
+    Descriptor sampler = AllocDescriptor(sampler_heap);
     {
         D3D12_SAMPLER_DESC sampler_desc = {
             .Filter         = D3D12_FILTER_MIN_MAG_POINT_MIP_LINEAR,
@@ -373,15 +312,15 @@ int ENGINE_MAIN(int argc, const char** argv)
         device->m_device->CreateSampler(&sampler_desc, sampler.cpu_handle);
     }
 
-    DX12_Descriptor camera_desc = DX12_AllocDescriptor(cbv_srv_uav_heap);
-    DX12_Buffer camera_buffer;
+    Descriptor camera_desc = AllocDescriptor(cbv_srv_uav_heap);
+    Buffer camera_buffer;
     {
         // Create buffer.
         //
         uint alignment = 256;
         uint size = sizeof(Camera);
         uint aligned_size = AlignUp(size, alignment);
-        camera_buffer = DX12_Malloc(device, {.size = aligned_size, .heap_kind = RHI_HEAP_KIND_DEFAULT});
+        camera_buffer = Malloc(device, {.size = aligned_size, .heap_kind = RHI_HEAP_KIND_DEFAULT});
         camera_buffer.m_resource->SetName(L"Camera");
 
         // Create srv.
@@ -397,27 +336,27 @@ int ENGINE_MAIN(int argc, const char** argv)
         uint size = sizeof(Camera);
 
         u64 staging_buffer_size = GetRequiredIntermediateSize(camera_buffer.m_resource, 0, 1);
-        auto staging_buffer = DX12_Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
+        auto staging_buffer = Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
 
-        void* ptr = DX12_Map(staging_buffer);
+        void* ptr = Map(staging_buffer);
         memcpy(ptr, camera, size);
-        DX12_Unmap(staging_buffer);
+        Unmap(staging_buffer);
 
-        DX12_BeginCommandList(cmd_list);
+        BeginCommandList(cmd_list);
         {
-            auto prev1 = DX12_CMD_TransitionBarrier(cmd_list, &camera_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
-            auto prev2 = DX12_CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-            DX12_CMD_Copy(cmd_list, camera_buffer, staging_buffer, size);
-            DX12_CMD_TransitionBarrier(cmd_list, &camera_buffer, prev1);
-            DX12_CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
+            auto prev1 = CMD_TransitionBarrier(cmd_list, &camera_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
+            auto prev2 = CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            CMD_Copy(cmd_list, camera_buffer, staging_buffer, size);
+            CMD_TransitionBarrier(cmd_list, &camera_buffer, prev1);
+            CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
         }
-        DX12_EndCommandList(cmd_list);
-        DX12_ExecuteCommandList(cmd_queue, cmd_list);
+        EndCommandList(cmd_list);
+        ExecuteCommandList(cmd_queue, cmd_list);
 
-        DX12_PlaceFence(cmd_queue, fence);
-        DX12_WaitForFence(fence);
+        PlaceFence(cmd_queue, fence);
+        WaitForFence(fence);
 
-        DX12_Free(staging_buffer);
+        Free(staging_buffer);
     }
 
 
@@ -456,7 +395,7 @@ int ENGINE_MAIN(int argc, const char** argv)
             for (;time_elapsed >= dt; time_elapsed -= dt)
             {
                 time += dt;
-                camera->position = vec4(vec3(cosf(time)*3.f, 3.f, sinf(time)*3.f), 1.0f);
+                camera->position  = vec4(vec3(cosf(time)*3.f, 3.f, sinf(time)*3.f), 1.0f);
                 camera->view      = m4x4::LookAtLH(camera->position.xyz, vec3(0.f, 0.f, 0.f), vec3(0.f, 1.f, 0.f));
                 camera->proj      = m4x4::PerspectiveLH(DegreeToRadian(120), 9.f / 16.f, 0.1f, 1000.f);
                 camera->view_proj = camera->proj * camera->view;
@@ -466,41 +405,41 @@ int ENGINE_MAIN(int argc, const char** argv)
                 uint size = sizeof(Camera);
 
                 u64 staging_buffer_size = GetRequiredIntermediateSize(camera_buffer.m_resource, 0, 1);
-                auto staging_buffer = DX12_Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
+                auto staging_buffer = Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
 
-                void* ptr = DX12_Map(staging_buffer);
+                void* ptr = Map(staging_buffer);
                 memcpy(ptr, camera, size);
-                DX12_Unmap(staging_buffer);
+                Unmap(staging_buffer);
 
-                DX12_BeginCommandList(cmd_list);
+                BeginCommandList(cmd_list);
                 {
-                    auto prev1 = DX12_CMD_TransitionBarrier(cmd_list, &camera_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
-                    auto prev2 = DX12_CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-                    DX12_CMD_Copy(cmd_list, camera_buffer, staging_buffer, size);
-                    DX12_CMD_TransitionBarrier(cmd_list, &camera_buffer, prev1);
-                    DX12_CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
+                    auto prev1 = CMD_TransitionBarrier(cmd_list, &camera_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
+                    auto prev2 = CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                    CMD_Copy(cmd_list, camera_buffer, staging_buffer, size);
+                    CMD_TransitionBarrier(cmd_list, &camera_buffer, prev1);
+                    CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
                 }
-                DX12_EndCommandList(cmd_list);
-                DX12_ExecuteCommandList(cmd_queue, cmd_list);
+                EndCommandList(cmd_list);
+                ExecuteCommandList(cmd_queue, cmd_list);
 
-                DX12_PlaceFence(cmd_queue, fence);
-                DX12_WaitForFence(fence);
+                PlaceFence(cmd_queue, fence);
+                WaitForFence(fence);
 
-                DX12_Free(staging_buffer);
+                Free(staging_buffer);
             }
         }
 
-        DX12_BeginCommandList(cmd_list);
+        BeginCommandList(cmd_list);
         {
             // @Temporary: Update current frame index!
-            DX12_CMD_TransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+            CMD_TransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-            DX12_CMD_SetRenderTarget(cmd_list, swap_chain->m_descriptors[swap_chain->current_frame_index]);
-            DX12_CMD_ClearRTV(cmd_list, swap_chain->m_descriptors[swap_chain->current_frame_index], 0.0f, 0.2f, 0.4f, 1.0f);
+            CMD_SetRenderTarget(cmd_list, swap_chain->m_descriptors[swap_chain->current_frame_index]);
+            CMD_ClearRTV(cmd_list, swap_chain->m_descriptors[swap_chain->current_frame_index], 0.0f, 0.2f, 0.4f, 1.0f);
 
             {
-                DX12_CMD_SetViewport(cmd_list, 0, 0, width, height);
-                DX12_CMD_SetScissor(cmd_list, 0, 0, width, height);
+                CMD_SetViewport(cmd_list, 0, 0, width, height);
+                CMD_SetScissor(cmd_list, 0, 0, width, height);
 
                 ID3D12DescriptorHeap* heaps[] = {
                     cbv_srv_uav_heap->m_descriptor_heap,
@@ -509,24 +448,24 @@ int ENGINE_MAIN(int argc, const char** argv)
                 cmd_list->m_list->SetDescriptorHeaps(ARRAY_COUNT(heaps), heaps);
                 cmd_list->m_list->SetGraphicsRootSignature(device->m_global_root_signature);
 
-                DX12_CMD_SetGraphicsConstants(cmd_list, &push_constants, sizeof(push_constants));
+                CMD_SetGraphicsConstants(cmd_list, &push_constants, sizeof(push_constants));
 
-                cmd_list->m_list->SetPipelineState(pipeline->m_pso);
+                cmd_list->m_list->SetPipelineState(pipeline_state->m_pso);
 
                 cmd_list->m_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-                DX12_CMD_SetIndexBuffer(cmd_list, index_buffer);
-                DX12_CMD_DrawIndexed(cmd_list, sponza->children[0]->meshes[0]->indices.size(), 1); // @Temporary
+                CMD_SetIndexBuffer(cmd_list, index_buffer);
+                CMD_DrawIndexed(cmd_list, sponza->children[0]->meshes[0]->indices.size(), 1); // @Temporary
             }
 
-            DX12_CMD_TransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+            CMD_TransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
         }
-        DX12_EndCommandList(cmd_list);
-        DX12_ExecuteCommandList(cmd_queue, cmd_list);
+        EndCommandList(cmd_list);
+        ExecuteCommandList(cmd_queue, cmd_list);
 
-        DX12_PlaceFence(cmd_queue, fence);
-        DX12_Present(swap_chain);
-        DX12_WaitForFence(fence);
+        PlaceFence(cmd_queue, fence);
+        Present(swap_chain);
+        WaitForFence(fence);
 
         swap_chain->current_frame_index = swap_chain->m_swap_chain->GetCurrentBackBufferIndex();
     }
@@ -535,17 +474,17 @@ int ENGINE_MAIN(int argc, const char** argv)
     //
     Window::Destroy(window);
 
-    DX12_DeinitPipeline(pipeline);
+    DeinitPipeline(pipeline_state);
 
     DeinitCompiler(compiler);
 
-    DX12_DeinitFence(fence);
-    DX12_DeinitSwapChain(swap_chain);
-    DX12_DeinitDescriptorHeap(cbv_srv_uav_heap);
-    DX12_DeinitDescriptorHeap(rtv_heap);
-    DX12_DeinitCommandList(cmd_list);
-    DX12_DeinitCommandQueue(cmd_queue);
-    DX12_DeinitDevice(device);
+    DeinitFence(fence);
+    DeinitSwapChain(swap_chain);
+    DeinitDescriptorHeap(cbv_srv_uav_heap);
+    DeinitDescriptorHeap(rtv_heap);
+    DeinitCommandList(cmd_list);
+    DeinitCommandQueue(cmd_queue);
+    DeinitDevice(device);
 
     return 0;
 }

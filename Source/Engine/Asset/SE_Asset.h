@@ -22,15 +22,6 @@ namespace Engine
         RGBA8_UNORM
     };
 
-    struct Texture
-    {
-        u8* data;
-        u32 width;
-        u32 height;
-        u16 mips;
-        TextureFormat format;
-    };
-
     struct Material
     {
     };
@@ -45,15 +36,13 @@ namespace Engine
         AABB aabb;
     };
 
-    struct SceneComponent
+    struct Scene_Component
     {
         m4x4 local_transform = m4x4::Identity();
-        Array <SceneComponent*> children;
+        Array <Scene_Component*> children;
         Array <Mesh*> meshes;
     };
 
 
-
-
-    [[nodiscard]] ENGINE_API SceneComponent* LoadGLTF(const String& path);
+    [[nodiscard]] ENGINE_API Scene_Component* LoadGLTF(const String& path);
 }

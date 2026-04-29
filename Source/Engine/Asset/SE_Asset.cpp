@@ -50,14 +50,14 @@ namespace Engine
         return v;
     }
 
-    INTERNAL SceneComponent* cgltfParseNode(cgltf_node* node)
+    INTERNAL Scene_Component* cgltfParseNode(cgltf_node* node)
     {
         cgltf_mesh* mesh = node->mesh;
         if (!mesh) {
             return nullptr;
         }
 
-        SceneComponent* result = new SceneComponent;
+        Scene_Component* result = new Scene_Component;
 
         uint num_primitives = (uint)mesh->primitives_count;
         for (uint pi = 0; pi < num_primitives; ++pi) 
@@ -194,14 +194,14 @@ namespace Engine
         for (cgltf_size chi = 0; chi < node->children_count; ++chi)
         {
             cgltf_node* child_node =  node->children[chi];
-            SceneComponent* child = cgltfParseNode(child_node);
+            Scene_Component* child = cgltfParseNode(child_node);
             result->children.push_back(child);
         }
 
         return result;
     }
 
-    ENGINE_API SceneComponent* LoadGLTF(const String& path)
+    ENGINE_API Scene_Component* LoadGLTF(const String& path)
     {
         cgltf_options opt = {};
         cgltf_data* data = nullptr;
@@ -221,7 +221,7 @@ namespace Engine
             return nullptr;
         }
 
-        SceneComponent* result = new SceneComponent;
+        Scene_Component* result = new Scene_Component;
 
         for (uint sci = 0; sci < num_scenes; ++sci) 
         {
@@ -231,7 +231,7 @@ namespace Engine
             for (uint ni = 0; ni < num_nodes; ++ni) 
             {
                 cgltf_node* node = scene->nodes[ni];
-                SceneComponent* child = cgltfParseNode(node);
+                Scene_Component* child = cgltfParseNode(node);
                 result->children.push_back(child);
             }
         }

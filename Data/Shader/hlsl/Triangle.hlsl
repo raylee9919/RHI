@@ -76,7 +76,7 @@ float4 PS_Main(PS_Input input) : SV_TARGET
 
     float4 albedo = tex.Sample(sam, input.uv);
 
-    float4 result = float4(input.normal, 1.0);
+    float4 result = albedo;
 
     return result;
 }
