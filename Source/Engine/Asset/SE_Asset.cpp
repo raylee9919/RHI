@@ -4,6 +4,8 @@
 
 #include "Core/Core_Log.h"
 
+#include "GFX/gfx.h"
+
 #include "ThirdParty/cgltf/Include/cgltf.h"
 
 namespace Engine
@@ -50,10 +52,16 @@ namespace Engine
         return v;
     }
 
-    INTERNAL Scene_Component* cgltfParseNode(cgltf_node* node)
+    INTERNAL Scene_Component* cgltfParseNode(GFX::State* gfx, cgltf_node* node)
     {
+        if (!gfx) 
+        {
+            return nullptr;
+        }
+
         cgltf_mesh* mesh = node->mesh;
-        if (!mesh) {
+        if (!mesh) 
+        {
             return nullptr;
         }
 
@@ -115,7 +123,7 @@ namespace Engine
 
             // Process indices.
             //
-            Array<uint32> indices;
+            Array<u32> indices;
             if (prim->indices)
             {
                 for (cgltf_size i = 0; i < prim->indices->count; ++i)
@@ -136,8 +144,13 @@ namespace Engine
 
             M->vertices = std::move(verts);
             M->indices  = std::move(indices);
-            M->material = nullptr;
             M->aabb     = aabb;
+
+            auto vb = GFX::AllocStructuredBuffer(gfx, M->vertices.data(), sizeof(M->vertices[0]), M->vertices.size());
+            M->vertex_buffer = vb.first;
+            M->vertex_buffer_descriptor = vb.second;
+
+            M->index_buffer = GFX::AllocRawBuffer(gfx, M->indices.data(), sizeof(M->indices[0]) * M->indices.size());
 
             result->meshes.push_back(std::move(M));
         }
@@ -194,15 +207,19 @@ namespace Engine
         for (cgltf_size chi = 0; chi < node->children_count; ++chi)
         {
             cgltf_node* child_node =  node->children[chi];
-            Scene_Component* child = cgltfParseNode(child_node);
+            Scene_Component* child = cgltfParseNode(gfx, child_node);
             result->children.push_back(child);
         }
 
         return result;
     }
 
-    ENGINE_API Scene_Component* LoadGLTF(const String& path)
+    ENGINE_API Scene_Component* LoadGLTF(GFX::State* gfx, const String& path)
     {
+        if (!gfx) {
+            return nullptr;
+        }
+
         cgltf_options opt = {};
         cgltf_data* data = nullptr;
 
@@ -231,7 +248,7 @@ namespace Engine
             for (uint ni = 0; ni < num_nodes; ++ni) 
             {
                 cgltf_node* node = scene->nodes[ni];
-                Scene_Component* child = cgltfParseNode(node);
+                Scene_Component* child = cgltfParseNode(gfx, node);
                 result->children.push_back(child);
             }
         }

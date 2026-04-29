@@ -8,6 +8,7 @@
 #include "Asset/SE_Asset.h"
 
 #include "RHI/DX12/RHI_DX12.h"
+#include "GFX/gfx.h"
 #include "Shader/DXIL/DXIL_Compiler.h"
 #include "Renderer/Renderer.h"
 
@@ -19,7 +20,7 @@
 using namespace Engine;
 using namespace DXIL;
 using namespace DX12;
-using namespace Renderer;
+using namespace Render;
 
 
 Array<D3D12_INPUT_ELEMENT_DESC> 
@@ -111,6 +112,9 @@ int ENGINE_MAIN(int argc, const char** argv)
     Fence* fence = new Fence;
     InitFence(device, fence);
 
+    GFX::State* gfx_state = new GFX::State;
+    GFX::Init(gfx_state, device, cmd_list, cmd_queue, fence, cbv_srv_uav_heap);
+
     Compiler* compiler = new Compiler;
     InitCompiler(compiler);
 
@@ -118,6 +122,10 @@ int ENGINE_MAIN(int argc, const char** argv)
 #if BUILD_DEBUG
     is_debug = true;
 #endif
+
+    // @Temporary: Root
+    //
+    Scene_Component* root_component = new Scene_Component;
 
     // @Temporary: Camera
     //
@@ -135,95 +143,17 @@ int ENGINE_MAIN(int argc, const char** argv)
 
     // @Temporary: Load model
     //
-    Scene_Component* sponza = LoadGLTF("C:/dev/swl/Untitled/Data/Model/Cube/Cube.gltf");
+    Scene_Component* sponza = LoadGLTF(gfx_state, "C:/dev/swl/Untitled/Data/Model/Cube/Cube.gltf");
     CORE_ASSERT(sponza);
+    root_component->children.push_back(sponza);
 
+    // @Temporary: Create PSO
+    //
     Pipeline_State* pipeline_state = new Pipeline_State;
     {
         String path = "C:/dev/swl/Untitled/Data/Shader/HLSL/Triangle.hlsl";
         auto intermediate_pso = dx12CreateIntermediatePipelineState(compiler, path, is_debug);
         InitPipelineState(device, &intermediate_pso, pipeline_state);
-    }
-
-
-
-
-    // @Temporary: Create vertex buffer and descriptor pointing it.
-    //
-    Buffer vertex_buffer;
-    Descriptor vertex_buffer_descriptor = AllocDescriptor(cbv_srv_uav_heap);
-    {
-        // Create buffer.
-        //
-        auto& vertices = sponza->children[0]->meshes[0]->vertices;
-        u64 num_vertices = vertices.size();
-        u64 stride = sizeof(vertices[0]);
-        u64 sz = num_vertices * stride;
-
-        vertex_buffer = Malloc(device, {.size = sz, .heap_kind = RHI_HEAP_KIND_DEFAULT});
-
-        u64 staging_buffer_size = GetRequiredIntermediateSize(vertex_buffer.m_resource, 0, 1);
-        auto staging_buffer = Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
-
-        void* ptr = Map(staging_buffer);
-        memcpy(ptr, vertices.data(), sz);
-        Unmap(staging_buffer);
-
-        BeginCommandList(cmd_list);
-        {
-            auto prev1 = CMD_TransitionBarrier(cmd_list, &vertex_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
-            auto prev2 = CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-            CMD_Copy(cmd_list, vertex_buffer, staging_buffer, sz);
-            CMD_TransitionBarrier(cmd_list, &vertex_buffer, prev1);
-            CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
-        }
-        EndCommandList(cmd_list);
-        ExecuteCommandList(cmd_queue, cmd_list);
-
-        PlaceFence(cmd_queue, fence);
-        WaitForFence(fence);
-
-
-        // Create srv.
-        //
-        CD3DX12_SHADER_RESOURCE_VIEW_DESC desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::StructuredBuffer(num_vertices, stride);
-        device->m_device->CreateShaderResourceView(vertex_buffer.m_resource, &desc, vertex_buffer_descriptor.cpu_handle);
-
-        // Cleanup
-        //
-        Free(staging_buffer);
-    }
-
-    // Create index buffer.
-    //
-    Buffer index_buffer;
-    {
-        auto& indices = sponza->children[0]->meshes[0]->indices;
-        u64 num_indices = indices.size();
-        u64 sz = num_indices * sizeof(indices[0]);
-
-        index_buffer = Malloc(device, {.size = sz, .heap_kind = RHI_HEAP_KIND_DEFAULT});
-
-        u64 staging_buffer_size = GetRequiredIntermediateSize(index_buffer.m_resource, 0, 1);
-        auto staging_buffer = Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
-
-        void* ptr = Map(staging_buffer);
-        memcpy(ptr, indices.data(), sz);
-        Unmap(staging_buffer);
-
-        BeginCommandList(cmd_list);
-        {
-            auto prev1 = CMD_TransitionBarrier(cmd_list, &index_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
-            auto prev2 = CMD_TransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-            CMD_Copy(cmd_list, index_buffer, staging_buffer, sz);
-            CMD_TransitionBarrier(cmd_list, &index_buffer, prev1);
-            CMD_TransitionBarrier(cmd_list, &staging_buffer, prev2);
-        }
-        EndCommandList(cmd_list);
-        ExecuteCommandList(cmd_queue, cmd_list);
-
-        PlaceFence(cmd_queue, fence);
-        WaitForFence(fence);
     }
 
     // @Temporary: Create texture and view.
@@ -372,8 +302,9 @@ int ENGINE_MAIN(int argc, const char** argv)
 
         u32 camera_id;
     };
+
     PushConstant push_constants = {
-        .vertex_buffer_id  = (u32)vertex_buffer_descriptor.m_index,
+        .vertex_buffer_id  = 0,
         .texture_id        = (u32)tex_srv.m_index,
         .sampler_id        = (u32)sampler.m_index,
 
@@ -448,14 +379,33 @@ int ENGINE_MAIN(int argc, const char** argv)
                 cmd_list->m_list->SetDescriptorHeaps(ARRAY_COUNT(heaps), heaps);
                 cmd_list->m_list->SetGraphicsRootSignature(device->m_global_root_signature);
 
-                CMD_SetGraphicsConstants(cmd_list, &push_constants, sizeof(push_constants));
-
                 cmd_list->m_list->SetPipelineState(pipeline_state->m_pso);
 
                 cmd_list->m_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-                CMD_SetIndexBuffer(cmd_list, index_buffer);
-                CMD_DrawIndexed(cmd_list, sponza->children[0]->meshes[0]->indices.size(), 1); // @Temporary
+
+                Stack<Scene_Component*> dfs;
+                dfs.push(root_component);
+
+                while (!dfs.empty())
+                {
+                    auto* node = dfs.top();
+                    dfs.pop();
+
+                    for (auto& mesh : node->meshes)
+                    {
+                        push_constants.vertex_buffer_id = mesh->vertex_buffer_descriptor.m_index;
+                        CMD_SetGraphicsConstants(cmd_list, &push_constants, sizeof(push_constants));
+
+                        CMD_SetIndexBuffer(cmd_list, mesh->index_buffer);
+                        CMD_DrawIndexed(cmd_list, mesh->indices.size(), 1);
+                    }
+
+                    for (Scene_Component* child : node->children)
+                    {
+                        dfs.push(child);
+                    }
+                }
             }
 
             CMD_TransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);

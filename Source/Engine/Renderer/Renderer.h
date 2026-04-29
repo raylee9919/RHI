@@ -6,8 +6,9 @@
 
 namespace Engine
 {
-    namespace Renderer
+    namespace Render
     {
+
         struct Camera 
         {
             m4x4 view;
@@ -15,6 +16,18 @@ namespace Engine
             m4x4 view_proj;
 
             vec4 position;
+        };
+
+        struct ENGINE_API IPass
+        {
+            virtual void Execute() = 0;
+
+            Camera camera;
+        };
+
+        struct ENGINE_API PBR_Pass : IPass
+        {
+            virtual void Execute() override;
         };
     }
 }

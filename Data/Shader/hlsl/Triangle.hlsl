@@ -3,6 +3,14 @@
 
 #define PUSH_CONSTANTS(Type, Name) ConstantBuffer<Type> Name : register(b0)
 
+struct Vertex
+{
+    float3 position;
+    float3 normal;
+    float2 uv;
+    float4 tangent;
+};
+
 struct Camera
 {
     float4x4 view;
@@ -10,15 +18,6 @@ struct Camera
     float4x4 view_proj;
 
     float4 position;
-};
-//=============================================================================
-
-struct Vertex
-{
-    float3 position;
-    float3 normal;
-    float2 uv;
-    float4 tangent;
 };
 
 struct PushConstants

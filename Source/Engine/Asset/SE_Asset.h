@@ -6,6 +6,10 @@
 #include "Core/SE_Array.h"
 #include "Core/SE_String.h"
 
+#include "RHI/DX12/RHI_DX12.h"
+using namespace Engine::DX12;
+
+#include "GFX/gfx.h"
 
 namespace Engine
 {
@@ -22,27 +26,27 @@ namespace Engine
         RGBA8_UNORM
     };
 
-    struct Material
-    {
-    };
-
     struct Mesh
     {
         Array<Vertex> vertices;
-        Array<u32> indices;
+        Array<uint32> indices;
 
-        Material* material;
+        Buffer     vertex_buffer;
+        Descriptor vertex_buffer_descriptor;
+
+        Buffer     index_buffer;
 
         AABB aabb;
     };
 
     struct Scene_Component
     {
+        String name;
+
         m4x4 local_transform = m4x4::Identity();
         Array <Scene_Component*> children;
         Array <Mesh*> meshes;
     };
 
-
-    [[nodiscard]] ENGINE_API Scene_Component* LoadGLTF(const String& path);
+    [[nodiscard]] ENGINE_API Scene_Component* LoadGLTF(GFX::State* gfx, const String& path);
 }
