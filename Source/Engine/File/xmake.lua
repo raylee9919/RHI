@@ -1,6 +1,6 @@
 -- Copyright Seong Woo Lee. All Rights Reserved.
 
-target("FileSystem")
+target("File")
     set_kind("object")
     set_group("Engine")
 

@@ -5,3 +5,7 @@ target("Input")
     set_group("Engine")
 
     add_includedirs(".", { public = true })
+    add_headerfiles("*.h")
+    add_files("*.cpp")
+
+    add_deps("SDL3")

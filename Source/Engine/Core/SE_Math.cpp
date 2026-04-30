@@ -139,9 +139,23 @@ namespace Engine
         return v;
     }
 
-    vec4& operator *= (vec4& l, const f32& r)
+    vec4 operator * (const vec4& l, const f32 r)
+    {
+        vec4 v;
+        __m128 s = _mm_set1_ps(r);
+        v.lane = _mm_mul_ps(l.lane, s);
+        return v;
+    }
+
+    vec4& operator *= (vec4& l, const f32 r)
     {
         l.lane = _mm_mul_ps(l.lane, _mm_set1_ps(r));
+        return l;
+    }
+
+    vec4& operator += (vec4& l, vec4 r)
+    {
+        l.lane = _mm_add_ps(l.lane, r.lane);
         return l;
     }
 

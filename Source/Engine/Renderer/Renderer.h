@@ -25,6 +25,7 @@ namespace Engine
             s32 sampler;
         };
 
+        // @Important: Constant buffer alignment!
         struct Camera 
         {
             m4x4 view;

@@ -76,5 +76,8 @@ float4 PS_Main(PS_Input input) : SV_TARGET
     Texture2D albedo_tex = ResourceDescriptorHeap[material.albedo_id];
     float4 albedo = albedo_tex.Sample(sampler_linear, input.uv);
 
+    Texture2D normal_tex = ResourceDescriptorHeap[material.normal_id];
+    float3 normal = normal_tex.Sample(sampler_linear, input.uv).xyz;
+
     return albedo;
 }

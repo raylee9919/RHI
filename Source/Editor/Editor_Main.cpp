@@ -16,6 +16,8 @@
 #include "ThirdParty/DirectX/Include/d3dx12/d3dx12.h"
 #include "ThirdParty/DXC/Include/d3d12shader.h"
 
+#include <iostream>
+
 
 using namespace Engine;
 using namespace DXIL;
@@ -82,10 +84,10 @@ int ENGINE_MAIN(int argc, const char** argv)
     (void)argc;
     (void)argv;
 
-    uint width  = 2560;
-    uint height = 1440;
+    uint width  = 1920, height = 1080;
 
-    Window* window = Window::Create("Hello", width, height);
+    Input_System* input = new Input_System;
+    Window* window = Window::Create("Hello", width, height, input);
 
     Device* device = new Device;
     InitDevice(device, true);
@@ -96,6 +98,8 @@ int ENGINE_MAIN(int argc, const char** argv)
     CommandList* cmd_list = new CommandList;
     InitCommandList(device, cmd_list, D3D12_COMMAND_LIST_TYPE_DIRECT);
 
+    // Create heaps
+    //
     DescriptorHeap* rtv_heap = new DescriptorHeap;
     InitDescriptorHeap(device, rtv_heap, 53, RHI_DESCRIPTOR_KIND_RTV);
 
@@ -108,7 +112,8 @@ int ENGINE_MAIN(int argc, const char** argv)
     DescriptorHeap* sampler_heap = new DescriptorHeap;
     InitDescriptorHeap(device, sampler_heap, 256, RHI_DESCRIPTOR_KIND_SAMPLER);
 
-
+    // Create window and surface
+    //
     HWND hwnd = (HWND)window->GetPlatformWindow();
     uint num_frames = 3;
     SwapChain* swap_chain = new SwapChain;
@@ -134,14 +139,16 @@ int ENGINE_MAIN(int argc, const char** argv)
 
     // @Temporary: Camera
     //
+    constexpr f32 aspect_ratio = 9.f / 16.f;
+    constexpr f32 near_z       = 0.1f;
+    constexpr f32 far_z        = 10000.0f;
     Camera* camera = new Camera;
     {
-        vec3 position    = vec3(0.f, 700.f, 400.f);
+        vec3 position    = vec3(300.f, 250.f, 0.f);
         vec3 look_at     = vec3(0.f, 0.f, 0.f);
-        f32 aspect_ratio = 16.f / 9.f;
 
         camera->view      = m4x4::LookAtLH(position, look_at, vec3(0.f, 1.f, 0.f));
-        camera->proj      = m4x4::PerspectiveLH(DegreeToRadian(120), aspect_ratio, 0.1f, 1000.f);
+        camera->proj      = m4x4::PerspectiveLH(DegreeToRadian(120), aspect_ratio, near_z, far_z);
         camera->view_proj = camera->proj * camera->view;
         camera->position  = vec4(position, 1.f);
     }
@@ -262,8 +269,21 @@ int ENGINE_MAIN(int argc, const char** argv)
             constexpr f32 dt = 1.f / 60.f;
             for (;time_elapsed >= dt; time_elapsed -= dt)
             {
+                // @Temporary: Update camera
+                //
+                constexpr f32 speed = 64.f;
+                if (input->IsDown[KEY_Q])
+                {
+                    camera->position += ( vec4(0.f, speed, 0.f, 0.f) * dt );
+                }
+
+                if (input->IsDown[KEY_E])
+                {
+                    camera->position += ( vec4(0.f,-speed, 0.f, 0.f) * dt );
+                }
+
                 camera->view      = m4x4::LookAtLH(camera->position.xyz, vec3(0.f, 0.f, 0.f), vec3(0.f, 1.f, 0.f));
-                camera->proj      = m4x4::PerspectiveLH(DegreeToRadian(120), 9.f / 16.f, 0.1f, 1000.f);
+                camera->proj      = m4x4::PerspectiveLH(DegreeToRadian(100), aspect_ratio, near_z, far_z);
                 camera->view_proj = camera->proj * camera->view;
             }
             
@@ -302,9 +322,9 @@ int ENGINE_MAIN(int argc, const char** argv)
             CmdTransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
             CmdSetRenderTarget(cmd_list, &swap_chain->m_descriptors[swap_chain->current_frame_index], &dsv);
-            CmdClearRTV(cmd_list, swap_chain->m_descriptors[swap_chain->current_frame_index], 0.0f, 0.2f, 0.4f, 1.0f);
+            CmdClearRTV(cmd_list, swap_chain->m_descriptors[swap_chain->current_frame_index], 0.0f, 0.0f, 0.0f, 1.0f);
 
-            CmdClearDSV(cmd_list, dsv, 1.f, 0, width, height);
+            CmdClearDSV(cmd_list, dsv, 1.0f, 0u, width, height);
 
             {
                 CmdSetViewport(cmd_list, 0, 0, width, height);

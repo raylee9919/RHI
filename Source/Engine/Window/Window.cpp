@@ -7,7 +7,7 @@
 
 namespace Engine
 {
-    Window* Window::Create(const char* title, int width, int height)
+    Window* Window::Create(const char* title, int width, int height, Input_System* input_system)
     {
         SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
 
@@ -16,10 +16,11 @@ namespace Engine
         SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
         SDL_Window* sdl = SDL_CreateWindow(title, width, height, flags);
 
-        window->sdl       = sdl;
-        window->m_running = true;
-        window->m_width   = width;
-        window->m_height  = height;
+        window->sdl            = sdl;
+        window->m_input_system = input_system;
+        window->m_running      = true;
+        window->m_width        = width;
+        window->m_height       = height;
 
         Log("Created Window.");
 
@@ -52,8 +53,24 @@ namespace Engine
 
         bool ended = SDL_PollEvent(&event);
 
-        if (event.type == SDL_EVENT_QUIT) {
+        if (event.type == SDL_EVENT_QUIT) 
+        {
             m_running = false;
+        }
+
+        if (m_input_system)
+        {
+            if (event.type == SDL_EVENT_KEY_DOWN)
+            {
+                Key key = KeyFromSDLKey(event.key.key);
+                m_input_system->IsDown[key] = true;
+            }
+
+            if (event.type == SDL_EVENT_KEY_UP)
+            {
+                Key key = KeyFromSDLKey(event.key.key);
+                m_input_system->IsDown[key] = false;
+            }
         }
 
         return ended;
