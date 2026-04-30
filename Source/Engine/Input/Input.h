@@ -121,12 +121,29 @@ namespace Engine
         KEY_FORWARD,
     };
 
+    typedef u16 Mouse_Button;
+    enum
+    {
+        MOUSE_NULL   = 0,
+
+        MOUSE_LEFT   = 1,
+        MOUSE_MIDDLE = 2,
+        MOUSE_RIGHT  = 3,
+    };
+
     struct ENGINE_API Input_System
     {
         Input_System();
 
-        b8 IsDown[512];
+        b8 key_is_down[512];
+
+        f32 current_mouse_x;
+        f32 current_mouse_y;
+        b8 mouse_was_down[32];
+        b8 mouse_is_down[32];
     };
 
-    ENGINE_API Key KeyFromSDLKey(SDL_Keycode sdl_key);
+
+    ENGINE_API Mouse_Button MouseButtonFromSDL(SDL_MouseButtonFlags flags);
+    ENGINE_API Key KeyFromSDL(SDL_Keycode sdl_key);
 }

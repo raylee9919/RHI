@@ -26,13 +26,17 @@ namespace Engine
         };
 
         // @Important: Constant buffer alignment!
-        struct Camera 
+        struct Camera
         {
             m4x4 view;
             m4x4 proj;
             m4x4 view_proj;
-
             vec4 position;
+            f32 yaw;
+            f32 pitch;
+            f32 speed;
+            f32 last_mouse_x;
+            f32 last_mouse_y;
         };
 
         struct ENGINE_API IPass
@@ -46,5 +50,6 @@ namespace Engine
         {
             virtual void Execute() override;
         };
+
     }
 }

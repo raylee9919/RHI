@@ -74,6 +74,7 @@ namespace Engine
         static m4x4 Identity();
         static m4x4 Scale(f32 x, f32 y, f32 z);
         static m4x4 LookAtLH(vec3 from, vec3 at, vec3 up);
+        static m4x4 LookToLH(vec3 eye, vec3 dir, vec3 up);
         static m4x4 PerspectiveLH(f32 fov, f32 aspect_ratio, f32 near_z, f32 far_z);
     };
 
@@ -93,6 +94,7 @@ namespace Engine
         return f * d;
     }
 
+    ENGINE_API vec3 operator + (const vec3& l, const vec3& r);
     ENGINE_API vec3 operator - (const vec3& l, const vec3& r);
     ENGINE_API f32 Dot(const vec3& l, const vec3& r);
     ENGINE_API vec3 Cross(const vec3& l, const vec3& r);
@@ -102,4 +104,5 @@ namespace Engine
     ENGINE_API vec4 operator * (const vec4& l, const f32 r);
     ENGINE_API vec4& operator *= (vec4& l, const f32 r);
     ENGINE_API vec4& operator += (vec4& l, const vec4 r);
+    ENGINE_API vec4& operator -= (vec4& l, const vec4 r);
 }

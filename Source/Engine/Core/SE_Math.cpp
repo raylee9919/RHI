@@ -20,6 +20,15 @@ namespace Engine
         z = f3;
     }
 
+    vec3 operator + (const vec3& l, const vec3& r)
+    {
+        vec3 v;
+        v.x = l.x + r.x;
+        v.y = l.y + r.y;
+        v.z = l.z + r.z;
+        return v;
+    }
+
     vec3 operator - (const vec3& l, const vec3& r)
     {
         vec3 v;
@@ -159,6 +168,12 @@ namespace Engine
         return l;
     }
 
+    vec4& operator -= (vec4& l, vec4 r)
+    {
+        l.lane = _mm_sub_ps(l.lane, r.lane);
+        return l;
+    }
+
     m4x4 m4x4::Identity()
     {
         m4x4 m;
@@ -179,20 +194,25 @@ namespace Engine
         return m;
     }
 
-    m4x4 m4x4::LookAtLH(vec3 from, vec3 at, vec3 up)
+    m4x4 m4x4::LookAtLH(vec3 eye, vec3 at, vec3 up)
     {
         m4x4 m;
 
-        vec3 z = Normalize(at - from);
+        vec3 z = Normalize(at - eye);
         vec3 x = Normalize(Cross(z, up));
         vec3 y = Cross(x, z);
 
-        m.rows[0] = vec4(x, -Dot(x, from));
-        m.rows[1] = vec4(y, -Dot(y, from));
-        m.rows[2] = vec4(z, -Dot(z, from));
+        m.rows[0] = vec4(x, -Dot(x, eye));
+        m.rows[1] = vec4(y, -Dot(y, eye));
+        m.rows[2] = vec4(z, -Dot(z, eye));
         m.rows[3] = vec4(0.f, 0.f, 0.f, 1.f);
 
         return m;
+    }
+
+    m4x4 m4x4::LookToLH(vec3 eye, vec3 dir, vec3 up)
+    {
+        return LookAtLH(eye, eye + dir, up);
     }
 
     m4x4 m4x4::PerspectiveLH(f32 fov, f32 aspect_ratio, f32 near_z, f32 far_z)

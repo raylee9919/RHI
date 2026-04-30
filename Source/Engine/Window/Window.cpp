@@ -60,17 +60,28 @@ namespace Engine
 
         if (m_input_system)
         {
+            // Keyboard
+            //
             if (event.type == SDL_EVENT_KEY_DOWN)
             {
-                Key key = KeyFromSDLKey(event.key.key);
-                m_input_system->IsDown[key] = true;
+                Key key = KeyFromSDL(event.key.key);
+                m_input_system->key_is_down[key] = true;
             }
 
             if (event.type == SDL_EVENT_KEY_UP)
             {
-                Key key = KeyFromSDLKey(event.key.key);
-                m_input_system->IsDown[key] = false;
+                Key key = KeyFromSDL(event.key.key);
+                m_input_system->key_is_down[key] = false;
             }
+
+            // Mouse
+            //
+            memcpy(m_input_system->mouse_was_down, m_input_system->mouse_is_down, sizeof(m_input_system->mouse_was_down[0]) * ARRAY_COUNT(m_input_system->mouse_was_down));
+
+            SDL_MouseButtonFlags flags = SDL_GetMouseState(&m_input_system->current_mouse_x, &m_input_system->current_mouse_y);
+            m_input_system->mouse_is_down[MOUSE_LEFT]   = (flags & SDL_BUTTON_MASK(SDL_BUTTON_LEFT));
+            m_input_system->mouse_is_down[MOUSE_RIGHT]  = (flags & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT));
+            m_input_system->mouse_is_down[MOUSE_MIDDLE] = (flags & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE));
         }
 
         return ended;

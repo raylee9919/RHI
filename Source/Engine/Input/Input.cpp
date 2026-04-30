@@ -4,52 +4,52 @@
 
 namespace Engine
 {
-    ENGINE_API Key KeyFromSDLKey(SDL_Keycode sdl_key)
+    ENGINE_API Key KeyFromSDL(SDL_Keycode sdl_key)
     {
         switch (sdl_key) 
         {
             INVALID_DEFAULT_CASE;
 
-            case SDLK_TAB: return KEY_TAB;
-            case SDLK_LEFT: return KEY_LEFT;
-            case SDLK_RIGHT: return KEY_RIGHT;
-            case SDLK_UP: return KEY_UP;
-            case SDLK_DOWN: return KEY_DOWN;
-            case SDLK_PAGEUP: return KEY_PAGE_UP;
-            case SDLK_PAGEDOWN: return KEY_PAGE_DOWN;
-            case SDLK_HOME: return KEY_HOME;
-            case SDLK_END: return KEY_END;
-            case SDLK_INSERT: return KEY_INSERT;
-            case SDLK_DELETE: return KEY_DELETE;
-            case SDLK_BACKSPACE: return KEY_BACKSPACE;
-            case SDLK_SPACE: return KEY_SPACE;
-            case SDLK_RETURN: return KEY_RETURN;
-            case SDLK_ESCAPE: return KEY_ESC;
-            case SDLK_APOSTROPHE: return KEY_APOSTROPHE;
-            case SDLK_COMMA: return KEY_COMMA;
-            case SDLK_MINUS: return KEY_MINUS;
-            case SDLK_PERIOD: return KEY_PERIOD;
-            case SDLK_SLASH: return KEY_SLASH;
-            case SDLK_SEMICOLON: return KEY_SEMICOLON;
-            case SDLK_EQUALS: return KEY_EQUALS;
-            case SDLK_LEFTBRACKET: return KEY_LEFT_BRACKET;
-            case SDLK_BACKSLASH: return KEY_BACK_SLASH;
-            case SDLK_RIGHTBRACKET: return KEY_RIGHT_BRACKET;
-            case SDLK_GRAVE: return KEY_GRAVE;
-            case SDLK_CAPSLOCK: return KEY_CAPS_LOCK;
-            case SDLK_SCROLLLOCK: return KEY_SCROLL_LOCK;
-            case SDLK_NUMLOCKCLEAR: return KEY_NUM_LOCK_CLEAR;
-            case SDLK_PRINTSCREEN: return KEY_PRINT_SCREEN;
-            case SDLK_PAUSE: return KEY_PAUSE;
-            case SDLK_LCTRL: return KEY_LEFT_CTRL;
-            case SDLK_LSHIFT: return KEY_LEFT_SHIFT;
-            case SDLK_LALT: return KEY_LEFT_ALT;
-            case SDLK_LGUI: return KEY_LEFT_GUI;
-            case SDLK_RCTRL: return KEY_RIGHT_CTRL;
-            case SDLK_RSHIFT: return KEY_RIGHT_SHIFT;
-            case SDLK_RALT: return KEY_RIGHT_ALT;
-            case SDLK_RGUI: return KEY_RIGHT_GUI;
-            case SDLK_APPLICATION: return KEY_APPLICATION;
+            case SDLK_TAB:              return KEY_TAB;
+            case SDLK_LEFT:             return KEY_LEFT;
+            case SDLK_RIGHT:            return KEY_RIGHT;
+            case SDLK_UP:               return KEY_UP;
+            case SDLK_DOWN:             return KEY_DOWN;
+            case SDLK_PAGEUP:           return KEY_PAGE_UP;
+            case SDLK_PAGEDOWN:         return KEY_PAGE_DOWN;
+            case SDLK_HOME:             return KEY_HOME;
+            case SDLK_END:              return KEY_END;
+            case SDLK_INSERT:           return KEY_INSERT;
+            case SDLK_DELETE:           return KEY_DELETE;
+            case SDLK_BACKSPACE:        return KEY_BACKSPACE;
+            case SDLK_SPACE:            return KEY_SPACE;
+            case SDLK_RETURN:           return KEY_RETURN;
+            case SDLK_ESCAPE:           return KEY_ESC;
+            case SDLK_APOSTROPHE:       return KEY_APOSTROPHE;
+            case SDLK_COMMA:            return KEY_COMMA;
+            case SDLK_MINUS:            return KEY_MINUS;
+            case SDLK_PERIOD:           return KEY_PERIOD;
+            case SDLK_SLASH:            return KEY_SLASH;
+            case SDLK_SEMICOLON:        return KEY_SEMICOLON;
+            case SDLK_EQUALS:           return KEY_EQUALS;
+            case SDLK_LEFTBRACKET:      return KEY_LEFT_BRACKET;
+            case SDLK_BACKSLASH:        return KEY_BACK_SLASH;
+            case SDLK_RIGHTBRACKET:     return KEY_RIGHT_BRACKET;
+            case SDLK_GRAVE:            return KEY_GRAVE;
+            case SDLK_CAPSLOCK:         return KEY_CAPS_LOCK;
+            case SDLK_SCROLLLOCK:       return KEY_SCROLL_LOCK;
+            case SDLK_NUMLOCKCLEAR:     return KEY_NUM_LOCK_CLEAR;
+            case SDLK_PRINTSCREEN:      return KEY_PRINT_SCREEN;
+            case SDLK_PAUSE:            return KEY_PAUSE;
+            case SDLK_LCTRL:            return KEY_LEFT_CTRL;
+            case SDLK_LSHIFT:           return KEY_LEFT_SHIFT;
+            case SDLK_LALT:             return KEY_LEFT_ALT;
+            case SDLK_LGUI:             return KEY_LEFT_GUI;
+            case SDLK_RCTRL:            return KEY_RIGHT_CTRL;
+            case SDLK_RSHIFT:           return KEY_RIGHT_SHIFT;
+            case SDLK_RALT:             return KEY_RIGHT_ALT;
+            case SDLK_RGUI:             return KEY_RIGHT_GUI;
+            case SDLK_APPLICATION:      return KEY_APPLICATION;
 
             case SDLK_0: return KEY_0;
             case SDLK_1: return KEY_1;
@@ -120,8 +120,24 @@ namespace Engine
         return KEY_NULL;
     }
 
+    ENGINE_API Mouse_Button MouseButtonFromSDL(SDL_MouseButtonFlags flags)
+    {
+        switch (flags)
+        {
+            INVALID_DEFAULT_CASE;
+
+            case SDL_BUTTON_LEFT:   return MOUSE_LEFT;
+            case SDL_BUTTON_MIDDLE: return MOUSE_MIDDLE;
+            case SDL_BUTTON_RIGHT:  return MOUSE_RIGHT;
+        }
+        return MOUSE_NULL;
+    }
+
     ENGINE_API Input_System::Input_System()
     {
-        memset(IsDown, 0, sizeof(IsDown[0]) * ARRAY_COUNT(IsDown));
+        memset(key_is_down, 0, sizeof(key_is_down[0]) * ARRAY_COUNT(key_is_down));
+
+        memset(mouse_was_down, 0, sizeof(mouse_was_down[0]) * ARRAY_COUNT(mouse_was_down));
+        memset(mouse_is_down, 0, sizeof(mouse_is_down[0]) * ARRAY_COUNT(mouse_is_down));
     }
 }
