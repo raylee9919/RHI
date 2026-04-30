@@ -2,14 +2,21 @@
 
 #include "SE_Asset.h"
 
-#include "Core/Core_Log.h"
+#include "Core/SE_Log.h"
 
-#include "GFX/gfx.h"
+#include "IO/IO.h"
+#include "FileSystem/FileSystem.h"
 
 #include "ThirdParty/cgltf/Include/cgltf.h"
 
+#include "ThirdParty/json/Include/json.h"
+
+#include "ThirdParty/stb/Include/stb_image.h"
+
 namespace Engine
 {
+    using namespace Render;
+
     INTERNAL cgltf_accessor* cgltfGetAccessorFromType(cgltf_primitive* prim, cgltf_attribute_type type)
     {
         for (cgltf_size i = 0; i < prim->attributes_count; ++i) 
@@ -52,7 +59,7 @@ namespace Engine
         return v;
     }
 
-    INTERNAL Scene_Component* cgltfParseNode(GFX::State* gfx, cgltf_node* node)
+    INTERNAL Scene_Component* cgltfParseNode(GFX::State* gfx, cgltf_data* data, cgltf_node* node, Array<s32>& material_ids)
     {
         if (!gfx) 
         {
@@ -90,7 +97,7 @@ namespace Engine
 
             Array<Vertex> verts(num_verts);
 
-            // Process vertex attributes.
+            // Fetch vertex attributes.
             //
             for (uint32 vi = 0; vi < num_verts; ++vi)
             {
@@ -121,7 +128,7 @@ namespace Engine
                 aabb.Expand(vert.position);
             }
 
-            // Process indices.
+            // Fetch indices.
             //
             Array<u32> indices;
             if (prim->indices)
@@ -142,6 +149,21 @@ namespace Engine
                 }
             }
 
+            // Fetch material index.
+            //
+            u32 material_index = 0;
+            if (prim->material)
+            {
+                for (cgltf_size mi = 0; mi < data->materials_count; ++mi)
+                {
+                    if (&data->materials[mi] == prim->material)
+                    {
+                        material_index = static_cast<u32>(mi);
+                    }
+                }
+            }
+
+            M->material_id = material_ids[material_index];
             M->vertices = std::move(verts);
             M->indices  = std::move(indices);
             M->aabb     = aabb;
@@ -207,7 +229,7 @@ namespace Engine
         for (cgltf_size chi = 0; chi < node->children_count; ++chi)
         {
             cgltf_node* child_node =  node->children[chi];
-            Scene_Component* child = cgltfParseNode(gfx, child_node);
+            Scene_Component* child = cgltfParseNode(gfx, data, child_node, material_ids);
             result->children.push_back(child);
         }
 
@@ -240,6 +262,149 @@ namespace Engine
 
         Scene_Component* result = new Scene_Component;
 
+
+        // Material
+        //
+        String dir = FS::path(path).parent_path().string();
+        Array<s32> material_ids(data->materials_count);
+        for (cgltf_size mi = 0; mi < data->materials_count; ++mi)
+        {
+            cgltf_material* mat = &data->materials[mi];
+
+            String albedo_path, normal_path, orm_path, emissive_path;
+
+            auto GetTexturePath = [&](cgltf_texture_view& view) -> String
+            {
+                if (view.texture && view.texture->image && view.texture->image->uri)
+                {
+                    return (FS::path(dir) / view.texture->image->uri).lexically_normal().string();
+                }
+                return "";
+            };
+
+            if (mat->has_pbr_metallic_roughness)
+            {
+                albedo_path = GetTexturePath(mat->pbr_metallic_roughness.base_color_texture);
+                orm_path    = GetTexturePath(mat->pbr_metallic_roughness.metallic_roughness_texture);
+            }
+
+            normal_path   = GetTexturePath(mat->normal_texture);
+            emissive_path = GetTexturePath(mat->emissive_texture);
+
+            nlohmann::json j;
+            j["albedo"]   = albedo_path;
+            j["orm"]      = orm_path;
+            j["normal"]   = normal_path;
+            j["emissive"] = emissive_path;
+
+            auto CreateSRV = [&](String& path) -> s32
+            {
+                if (path == "")
+                {
+                    return -1;
+                }
+                
+                int width, height;
+                int forced_channels = 4;
+                u8* data = stbi_load(path.c_str(), &width, &height, nullptr, forced_channels);
+                u32 pitch = width * forced_channels;
+                CORE_ASSERT(data);
+
+                // @Temporary
+                // @Temporary
+                // @Temporary
+                // @Temporary
+                u16 mip_levels = 1;
+                Texture tex = AllocTexture(gfx->device, {.width=(u32)width, .height=(u32)height, .depth=1, .mip_levels=mip_levels, .format=DXGI_FORMAT_R8G8B8A8_UNORM});
+                Descriptor srv = AllocDescriptor(gfx->cbv_srv_uav_heap);
+
+                {
+                    u64 upload_buffer_size = GetRequiredIntermediateSize(gfx->device, tex);
+                    auto upload_buffer = Malloc(gfx->device, {.size = upload_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD});
+
+                    BeginCommandList(gfx->cmd_list);
+                    {
+                        // @Temporary: study copying subresourecs...
+                        D3D12_SUBRESOURCE_DATA subresource_data = {
+                            .pData      = data,
+                            .RowPitch   = pitch,
+                            .SlicePitch = pitch * height
+                        };
+                        UpdateSubresources(gfx->cmd_list->m_list, tex.m_resource, upload_buffer.m_resource, 0, 0, 1, &subresource_data);
+                        CmdTransitionBarrier(gfx->cmd_list, tex.m_resource, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+                    }
+                    EndCommandList(gfx->cmd_list);
+                    ExecuteCommandList(gfx->cmd_queue, gfx->cmd_list);
+
+                    PlaceFence(gfx->cmd_queue, gfx->fence);
+                    WaitForFence(gfx->fence);
+
+                    Free(upload_buffer);
+
+                    // Create a view.
+                    //
+                    D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {
+                        .Format = tex.m_desc.format,
+                        .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D,
+                        .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                        .Texture2D = {
+                            .MostDetailedMip = 0,
+                            .MipLevels = mip_levels,
+                            .PlaneSlice = 0,
+                            .ResourceMinLODClamp = 0.f
+                        }
+                    };
+                    gfx->device->m_device->CreateShaderResourceView(tex.m_resource, &srv_desc, srv.cpu_handle);
+                }
+                // @Temporary
+                // @Temporary
+                // @Temporary
+                // @Temporary
+
+
+                stbi_image_free(data);
+
+                return srv.m_index;
+            };
+
+            auto CreateSampler = [&]() -> s32
+            {
+                Descriptor sampler = AllocDescriptor(gfx->sampler_heap);
+                {
+                    D3D12_SAMPLER_DESC sampler_desc = {
+                        .Filter         = D3D12_FILTER_MIN_MAG_POINT_MIP_LINEAR,
+                        .AddressU       = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+                        .AddressV       = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+                        .AddressW       = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+                        .MipLODBias     = 0.0f,
+                        .MaxAnisotropy  = 1,
+                        .ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER,
+                        .BorderColor    = {0.0f, 0.0f, 0.0f, 0.0f},
+                        .MinLOD         = 0.0f,
+                        .MaxLOD         = D3D12_FLOAT32_MAX
+                    };
+                    gfx->device->m_device->CreateSampler(&sampler_desc, sampler.cpu_handle);
+                }
+                return sampler.m_index;
+            };
+
+            Material material = {
+                .albedo   = CreateSRV(albedo_path),
+                .normal   = CreateSRV(normal_path),
+                .orm      = CreateSRV(orm_path),
+                .emissive = CreateSRV(emissive_path),
+                .sampler  = CreateSampler()
+            };
+
+            auto buf_and_desc = GFX::AllocStructuredBuffer(gfx, &material, sizeof(material), 1);
+            s32 mat_id = static_cast<s32>(buf_and_desc.second.m_index);
+            material_ids[mi] = mat_id;
+            result->materials.push_back(mat_id);
+        }
+
+
+        // Scenes
+        //
         for (uint sci = 0; sci < num_scenes; ++sci) 
         {
             cgltf_scene* scene = &data->scenes[sci];
@@ -248,7 +413,7 @@ namespace Engine
             for (uint ni = 0; ni < num_nodes; ++ni) 
             {
                 cgltf_node* node = scene->nodes[ni];
-                Scene_Component* child = cgltfParseNode(gfx, node);
+                Scene_Component* child = cgltfParseNode(gfx, data, node, material_ids);
                 result->children.push_back(child);
             }
         }

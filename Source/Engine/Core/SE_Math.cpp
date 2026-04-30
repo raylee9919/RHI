@@ -139,7 +139,7 @@ namespace Engine
         return v;
     }
 
-    vec4 operator *= (vec4& l, const f32& r)
+    vec4& operator *= (vec4& l, const f32& r)
     {
         l.lane = _mm_mul_ps(l.lane, _mm_set1_ps(r));
         return l;

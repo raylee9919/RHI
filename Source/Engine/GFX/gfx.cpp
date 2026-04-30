@@ -8,7 +8,7 @@ namespace Engine
 
     namespace GFX
     {
-        ENGINE_API bool Init(State* state, Device* device, CommandList* cmd_list, CommandQueue* cmd_queue, Fence* fence, DescriptorHeap* cbv_srv_uav_heap)
+        ENGINE_API bool Init(State* state, Device* device, CommandList* cmd_list, CommandQueue* cmd_queue, Fence* fence, DescriptorHeap* cbv_srv_uav_heap, DescriptorHeap* sampler_heap)
         {
             if (state)
             {
@@ -17,6 +17,7 @@ namespace Engine
                 state->cmd_queue        = cmd_queue;
                 state->fence            = fence;
                 state->cbv_srv_uav_heap = cbv_srv_uav_heap;
+                state->sampler_heap     = sampler_heap;
 
                 return true;
             }
@@ -44,11 +45,11 @@ namespace Engine
 
             BeginCommandList(state->cmd_list);
             {
-                auto prev1 = CMD_TransitionBarrier(state->cmd_list, &result.first, D3D12_RESOURCE_STATE_COPY_DEST);
-                auto prev2 = CMD_TransitionBarrier(state->cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-                CMD_Copy(state->cmd_list, result.first, staging_buffer, size);
-                CMD_TransitionBarrier(state->cmd_list, &result.first, prev1);
-                CMD_TransitionBarrier(state->cmd_list, &staging_buffer, prev2);
+                auto prev1 = CmdTransitionBarrier(state->cmd_list, &result.first, D3D12_RESOURCE_STATE_COPY_DEST);
+                auto prev2 = CmdTransitionBarrier(state->cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                CmdCopy(state->cmd_list, result.first, staging_buffer, size);
+                CmdTransitionBarrier(state->cmd_list, &result.first, prev1);
+                CmdTransitionBarrier(state->cmd_list, &staging_buffer, prev2);
             }
             EndCommandList(state->cmd_list);
             ExecuteCommandList(state->cmd_queue, state->cmd_list);
@@ -81,11 +82,11 @@ namespace Engine
 
             BeginCommandList(state->cmd_list);
             {
-                auto prev1 = CMD_TransitionBarrier(state->cmd_list, &buffer, D3D12_RESOURCE_STATE_COPY_DEST);
-                auto prev2 = CMD_TransitionBarrier(state->cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-                CMD_Copy(state->cmd_list, buffer, staging_buffer, size);
-                CMD_TransitionBarrier(state->cmd_list, &buffer, prev1);
-                CMD_TransitionBarrier(state->cmd_list, &staging_buffer, prev2);
+                auto prev1 = CmdTransitionBarrier(state->cmd_list, &buffer, D3D12_RESOURCE_STATE_COPY_DEST);
+                auto prev2 = CmdTransitionBarrier(state->cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                CmdCopy(state->cmd_list, buffer, staging_buffer, size);
+                CmdTransitionBarrier(state->cmd_list, &buffer, prev1);
+                CmdTransitionBarrier(state->cmd_list, &staging_buffer, prev2);
             }
             EndCommandList(state->cmd_list);
             ExecuteCommandList(state->cmd_queue, state->cmd_list);

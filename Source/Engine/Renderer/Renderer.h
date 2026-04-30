@@ -9,6 +9,22 @@ namespace Engine
     namespace Render
     {
 
+        enum class Texture_Format
+        {
+            RGBA8_UNORM
+        };
+
+        // @Important: Please sync with shaders.
+        struct Material
+        {
+            // Bindless SRV indices
+            s32 albedo;
+            s32 normal;
+            s32 orm;
+            s32 emissive;
+            s32 sampler;
+        };
+
         struct Camera 
         {
             m4x4 view;

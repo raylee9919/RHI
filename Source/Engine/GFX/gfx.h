@@ -18,10 +18,11 @@ namespace Engine
             CommandList* cmd_list;
             CommandQueue* cmd_queue;
             DescriptorHeap* cbv_srv_uav_heap;
+            DescriptorHeap* sampler_heap;
             Fence* fence;
         };
 
-        ENGINE_API bool Init(State* state, Device* device, CommandList* cmd_list, CommandQueue* cmd_queue, Fence* fence, DescriptorHeap* cbv_srv_uav_heap);
+        ENGINE_API bool Init(State* state, Device* device, CommandList* cmd_list, CommandQueue* cmd_queue, Fence* fence, DescriptorHeap* cbv_srv_uav_heap, DescriptorHeap* sampler_heap);
 
         ENGINE_API std::pair<Buffer, Descriptor> AllocStructuredBuffer(State* state, void* data, u64 stride, u64 count);
 

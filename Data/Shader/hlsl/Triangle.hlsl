@@ -3,6 +3,15 @@
 
 #define PUSH_CONSTANTS(Type, Name) ConstantBuffer<Type> Name : register(b0)
 
+struct Material
+{
+    int albedo_id;
+    int normal_id;
+    int orm_id;
+    int emissive_id;
+    int sampler_id;
+};
+
 struct Vertex
 {
     float3 position;
@@ -23,9 +32,7 @@ struct Camera
 struct PushConstants
 {
     uint vertex_buffer_id;
-    uint texture_id;
-    uint sampler_id;
-
+    uint material_id;
     uint camera_id;
 };
 PUSH_CONSTANTS(PushConstants, push);
@@ -49,7 +56,9 @@ PS_Input VS_Main(uint vertex_id : SV_VertexID)
     ConstantBuffer<Camera> camera = ResourceDescriptorHeap[push.camera_id];
 
     float4 position = float4(vert.position, 1.0);
-    result.sv_position = mul(camera.view_proj, position);
+    float4x4 view_proj = camera.view_proj;
+    float4 clip_space_position = mul(view_proj, position);
+    result.sv_position = clip_space_position;
     result.position    = vert.position;
     result.normal      = vert.normal;
     result.uv          = vert.uv;
@@ -60,22 +69,12 @@ PS_Input VS_Main(uint vertex_id : SV_VertexID)
 
 float4 PS_Main(PS_Input input) : SV_TARGET
 {
-    Texture2D<float4> tex = ResourceDescriptorHeap[push.texture_id];
-    SamplerState sam = SamplerDescriptorHeap[push.sampler_id];
+    StructuredBuffer<Material> material_buf = ResourceDescriptorHeap[push.material_id];
+    Material material = material_buf[0];
 
-    float3 light_position = float3(1.0, 1.0, 1.0);
-    float3 light_radiance = float3(1.0, 1.0, 1.0);
+    SamplerState sampler_linear = SamplerDescriptorHeap[material.sampler_id];
+    Texture2D albedo_tex = ResourceDescriptorHeap[material.albedo_id];
+    float4 albedo = albedo_tex.Sample(sampler_linear, input.uv);
 
-    ConstantBuffer<Camera> camera = ResourceDescriptorHeap[push.camera_id];
-
-    float3 l = normalize(light_position - input.position);
-    float3 v = normalize(camera.position.xyz - input.position);
-    float3 h = normalize(l + v);
-
-
-    float4 albedo = tex.Sample(sam, input.uv);
-
-    float4 result = albedo;
-
-    return result;
+    return albedo;
 }

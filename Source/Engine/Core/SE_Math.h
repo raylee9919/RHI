@@ -99,5 +99,5 @@ namespace Engine
     ENGINE_API vec3 Normalize(const vec3& v);
     ENGINE_API m4x4 operator * (const m4x4& l, const m4x4& r);
     ENGINE_API vec4 operator * (const m4x4& l, const vec4& r);
-    ENGINE_API vec4 operator *= (vec4& l, const f32& r);
+    ENGINE_API vec4& operator *= (vec4& l, const f32& r);
 }

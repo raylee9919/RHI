@@ -1,5 +1,6 @@
 includes("SDL3")
 includes("stb")
 includes("cgltf")
+includes("json")
 includes("DirectX")
 includes("DXC")

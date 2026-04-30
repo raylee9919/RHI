@@ -1,7 +1,7 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
 #include "Window.h"
-#include "Core/Core_Log.h"
+#include "Core/SE_Log.h"
 
 #include <SDL3/SDL.h>
 

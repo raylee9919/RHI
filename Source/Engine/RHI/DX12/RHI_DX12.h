@@ -4,6 +4,7 @@
 
 #include "Core/SE_Basics.h"
 #include "Core/SE_Array.h"
+#include "Core/SE_Math.h"
 
 #include "RHI/RHI.h"
 
@@ -106,6 +107,12 @@ namespace Engine
             uint16_t    depth;
             uint16_t    mip_levels;
             DXGI_FORMAT format;
+            D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
+
+            bool do_clear = false;
+            D3D12_CLEAR_VALUE clear_value;
+
+            D3D12_RESOURCE_STATES init_state = D3D12_RESOURCE_STATE_COPY_DEST;
         };
 
         struct Texture
@@ -162,17 +169,18 @@ namespace Engine
         ENGINE_API void EndCommandList(CommandList* cmd_list);
         ENGINE_API void ExecuteCommandList(CommandQueue* cmd_queue, CommandList* cmd_list);
 
-        ENGINE_API void CMD_SetViewport(CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height);
-        ENGINE_API void CMD_SetScissor(CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height);
-        ENGINE_API void CMD_ClearRTV(CommandList* cmd_list, Descriptor rtv, float r, float g, float b, float a);
-        ENGINE_API void CMD_SetRenderTarget(CommandList* cmd_list, Descriptor rtv);
-        ENGINE_API void CMD_Copy(CommandList* cmd_list, Buffer& dst, Buffer& src, uint64_t size);
-        ENGINE_API void CMD_TransitionBarrier(CommandList* cmd_list, ID3D12Resource* resource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
-        ENGINE_API D3D12_RESOURCE_STATES CMD_TransitionBarrier(CommandList* cmd_list, Buffer* buffer, D3D12_RESOURCE_STATES state);
-        ENGINE_API void CMD_Draw(CommandList* cmd_list, uint32_t num_vertices, uint32_t num_instances, uint32_t first_vertex, uint32_t first_instance);
-        ENGINE_API void CMD_DrawIndexed(CommandList* cmd_list, uint num_indices_per_instance, uint num_instances);
-        ENGINE_API void CMD_SetGraphicsConstants(CommandList* cmd_list, void* data, uint64_t size);
-        ENGINE_API void CMD_SetIndexBuffer(CommandList* cmd_list, Buffer buffer);
+        ENGINE_API void CmdSetViewport(CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height);
+        ENGINE_API void CmdSetScissor(CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height);
+        ENGINE_API void CmdClearRTV(CommandList* cmd_list, Descriptor rtv, float r, float g, float b, float a);
+        ENGINE_API void CmdClearDSV(CommandList* cmd_list, Descriptor& dsv, f32 depth, u8 stencil, u32 width, u32 height);
+        ENGINE_API void CmdSetRenderTarget(CommandList* cmd_list, Descriptor* rtv, Descriptor* dsv);
+        ENGINE_API void CmdCopy(CommandList* cmd_list, Buffer& dst, Buffer& src, uint64_t size);
+        ENGINE_API void CmdTransitionBarrier(CommandList* cmd_list, ID3D12Resource* resource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
+        ENGINE_API D3D12_RESOURCE_STATES CmdTransitionBarrier(CommandList* cmd_list, Buffer* buffer, D3D12_RESOURCE_STATES state);
+        ENGINE_API void CmdDraw(CommandList* cmd_list, uint32_t num_vertices, uint32_t num_instances, uint32_t first_vertex, uint32_t first_instance);
+        ENGINE_API void CmdDrawIndexed(CommandList* cmd_list, uint num_indices_per_instance, uint num_instances);
+        ENGINE_API void CmdSetGraphicsConstants(CommandList* cmd_list, void* data, uint64_t size);
+        ENGINE_API void CmdSetIndexBuffer(CommandList* cmd_list, Buffer buffer);
 
 
         ENGINE_API Buffer Malloc(Device* device, BufferDesc desc);

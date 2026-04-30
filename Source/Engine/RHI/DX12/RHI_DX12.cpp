@@ -1,7 +1,7 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
 #include "Core/SE_Basics.h"
-#include "Core/Core_Log.h"
+#include "Core/SE_Log.h"
 
 #include "RHI_DX12.h"
 
@@ -40,8 +40,6 @@ namespace Engine
                 case RHI_HEAP_KIND_READBACK: return D3D12_HEAP_TYPE_READBACK;
             }
         }
-
-
 
         ENGINE_API bool InitDevice(Device* device, bool use_debug_layer)
         {
@@ -554,7 +552,7 @@ namespace Engine
             cmd_queue->m_queue->ExecuteCommandLists(1, list);
         }
 
-        ENGINE_API void CMD_SetViewport(CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height)
+        ENGINE_API void CmdSetViewport(CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height)
         {
             D3D12_VIEWPORT viewport = {
                 .TopLeftX = (FLOAT)top_left_x,
@@ -567,7 +565,7 @@ namespace Engine
             cmd_list->m_list->RSSetViewports(1, &viewport);
         }
 
-        ENGINE_API void CMD_SetScissor(CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height)
+        ENGINE_API void CmdSetScissor(CommandList* cmd_list, int top_left_x, int top_left_y, int width, int height)
         {
             D3D12_RECT rect = {
                 .left = top_left_x,
@@ -578,30 +576,46 @@ namespace Engine
             cmd_list->m_list->RSSetScissorRects(1, &rect);
         }
 
-        ENGINE_API void CMD_ClearRTV(CommandList* cmd_list, Descriptor rtv, float r, float g, float b, float a)
+        ENGINE_API void CmdClearRTV(CommandList* cmd_list, Descriptor rtv, float r, float g, float b, float a)
         {
             FLOAT color[] = { r, g, b, a };
             cmd_list->m_list->ClearRenderTargetView(rtv.cpu_handle, color, 0, nullptr);
         }
 
-        ENGINE_API void CMD_SetRenderTarget(CommandList* cmd_list, Descriptor rtv)
+        ENGINE_API void CmdClearDSV(CommandList* cmd_list, Descriptor& dsv, f32 depth, u8 stencil, u32 width, u32 height)
         {
-            D3D12_CPU_DESCRIPTOR_HANDLE *dsv = nullptr;
-            cmd_list->m_list->OMSetRenderTargets(1, &rtv.cpu_handle, FALSE, dsv);
+            D3D12_CLEAR_FLAGS flags = D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL;
+            D3D12_RECT rect = {
+                .left   = 0,
+                .top    = 0,
+                .right  = static_cast<LONG>(width),
+                .bottom = static_cast<LONG>(height)
+            };
+            cmd_list->m_list->ClearDepthStencilView(dsv.cpu_handle, flags, depth, stencil, 1, &rect);
         }
 
-        ENGINE_API void CMD_Copy(CommandList* cmd_list, Buffer& dst, Buffer& src, uint64_t size)
+        ENGINE_API void CmdSetRenderTarget(CommandList* cmd_list, Descriptor* rtv, Descriptor* dsv)
+        {
+            D3D12_CPU_DESCRIPTOR_HANDLE* dsv_ptr = nullptr;
+            if (dsv) {
+                dsv_ptr = &dsv->cpu_handle;
+            }
+
+            cmd_list->m_list->OMSetRenderTargets(1, &rtv->cpu_handle, FALSE, dsv_ptr);
+        }
+
+        ENGINE_API void CmdCopy(CommandList* cmd_list, Buffer& dst, Buffer& src, uint64_t size)
         {
             cmd_list->m_list->CopyBufferRegion(dst.m_resource, 0, src.m_resource, 0, size);
         }
 
-        ENGINE_API void CMD_TransitionBarrier(CommandList* cmd_list, ID3D12Resource* resource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
+        ENGINE_API void CmdTransitionBarrier(CommandList* cmd_list, ID3D12Resource* resource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
         {
             CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(resource, before, after);
             cmd_list->m_list->ResourceBarrier(1, &barrier);
         }
 
-        ENGINE_API D3D12_RESOURCE_STATES CMD_TransitionBarrier(CommandList* cmd_list, Buffer* buffer, D3D12_RESOURCE_STATES state)
+        ENGINE_API D3D12_RESOURCE_STATES CmdTransitionBarrier(CommandList* cmd_list, Buffer* buffer, D3D12_RESOURCE_STATES state)
         {
             CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(buffer->m_resource, buffer->m_state, state);
             cmd_list->m_list->ResourceBarrier(1, &barrier);
@@ -613,12 +627,12 @@ namespace Engine
             return prev_state;
         }
 
-        ENGINE_API void CMD_Draw(CommandList* cmd_list, uint32_t num_vertices, uint32_t num_instances, uint32_t first_vertex, uint32_t first_instance)
+        ENGINE_API void CmdDraw(CommandList* cmd_list, uint32_t num_vertices, uint32_t num_instances, uint32_t first_vertex, uint32_t first_instance)
         {
             cmd_list->m_list->DrawInstanced(num_vertices, num_instances, first_vertex, first_instance);
         }
 
-        ENGINE_API void CMD_DrawIndexed(CommandList* cmd_list, uint num_indices_per_instance, uint num_instances)
+        ENGINE_API void CmdDrawIndexed(CommandList* cmd_list, uint num_indices_per_instance, uint num_instances)
         {
             uint start_index = 0;
             uint base_vertex = 0;
@@ -626,12 +640,12 @@ namespace Engine
             cmd_list->m_list->DrawIndexedInstanced(num_indices_per_instance, num_instances, start_index, base_vertex, start_instance);
         }
 
-        ENGINE_API void CMD_SetGraphicsConstants(CommandList* cmd_list, void* data, uint64_t size)
+        ENGINE_API void CmdSetGraphicsConstants(CommandList* cmd_list, void* data, uint64_t size)
         {
             cmd_list->m_list->SetGraphicsRoot32BitConstants(0, (size >> 2), data, 0);
         }
 
-        ENGINE_API void CMD_SetIndexBuffer(CommandList* cmd_list, Buffer buffer)
+        ENGINE_API void CmdSetIndexBuffer(CommandList* cmd_list, Buffer buffer)
         {
             D3D12_INDEX_BUFFER_VIEW view = {
                 .BufferLocation = buffer.m_gpu_address,
@@ -702,7 +716,7 @@ namespace Engine
                     .Quality = 0
                 },
                 .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
-                .Flags = D3D12_RESOURCE_FLAG_NONE
+                .Flags = tex_desc.flags
             };
 
             D3D12_HEAP_PROPERTIES heap_prop = {
@@ -713,13 +727,14 @@ namespace Engine
                 .VisibleNodeMask      = 1
             };
 
+            D3D12_CLEAR_VALUE* clear_value = tex_desc.do_clear ? &tex_desc.clear_value : nullptr;
+
             ID3D12Resource* res = nullptr;
-            D3D12_RESOURCE_STATES init_state = D3D12_RESOURCE_STATE_COPY_DEST;
-            CORE_ASSERT(SUCCEEDED(device->m_device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &res_desc, init_state, nullptr, IID_PPV_ARGS(&res))));
+            CORE_ASSERT(SUCCEEDED(device->m_device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &res_desc, tex_desc.init_state, clear_value, IID_PPV_ARGS(&res))));
 
             result.m_resource = res;
             result.m_desc     = tex_desc;
-            result.m_state    = init_state;
+            result.m_state    = tex_desc.init_state;
 
             return result;
         }
@@ -776,10 +791,11 @@ namespace Engine
                         .ConservativeRaster    = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
                     },
                     .DepthStencilState = {
-                        .DepthEnable   = FALSE,
-                        //D3D12_DEPTH_WRITE_MASK DepthWriteMask;
-                        //D3D12_COMPARISON_FUNC DepthFunc;
-                        .StencilEnable = FALSE, 
+                        .DepthEnable    = TRUE,
+                        .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL, // @Temporary: wtf...
+                        .DepthFunc      = D3D12_COMPARISON_FUNC_LESS,
+
+                        .StencilEnable  = FALSE, 
                         //UINT8 StencilReadMask;
                         //UINT8 StencilWriteMask;
                         //D3D12_DEPTH_STENCILOP_DESC FrontFace;
@@ -803,7 +819,7 @@ namespace Engine
                 // @Temporary
                 pso_desc.NumRenderTargets = 1;
                 pso_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-                //pso_desc.DSVFormat = ;
+                pso_desc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
                 HRESULT hr = device->m_device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&pipeline->m_pso));
                 CORE_ASSERT(SUCCEEDED(hr));

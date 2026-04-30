@@ -1,6 +1,6 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-#include "Core_Log.h"
+#include "SE_Log.h"
 #include "SE_String.h"
 
 #include <cstdarg>
