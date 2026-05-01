@@ -236,4 +236,10 @@ namespace Engine
     {
         lane = _mm_setr_ps(f1, f2, f3, f4);
     }
+
+    ENGINE_API f32 FMod(const f32 l, const f32 r)
+    {
+        f32 f = fmodf(l, r);
+        return f;
+    }
 }

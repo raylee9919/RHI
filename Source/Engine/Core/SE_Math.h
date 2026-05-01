@@ -99,10 +99,14 @@ namespace Engine
     ENGINE_API f32 Dot(const vec3& l, const vec3& r);
     ENGINE_API vec3 Cross(const vec3& l, const vec3& r);
     ENGINE_API vec3 Normalize(const vec3& v);
+
     ENGINE_API m4x4 operator * (const m4x4& l, const m4x4& r);
     ENGINE_API vec4 operator * (const m4x4& l, const vec4& r);
     ENGINE_API vec4 operator * (const vec4& l, const f32 r);
+
     ENGINE_API vec4& operator *= (vec4& l, const f32 r);
     ENGINE_API vec4& operator += (vec4& l, const vec4 r);
     ENGINE_API vec4& operator -= (vec4& l, const vec4 r);
+
+    ENGINE_API f32 FMod(const f32 l, const f32 r);
 }

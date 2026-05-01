@@ -35,6 +35,10 @@ typedef double f64;
 #define CONCAT(A, B) A##B
 #define CONCAT2(A, B) CONCAT(A, B)
 
+#define Min(a, b) (((a) > (b)) ? (b) : (a))
+#define Max(a, b) (((a) > (b)) ? (a) : (b))
+#define Clamp(x, lo, hi) Max(Min((x), (hi)), (lo))
+
 template <typename F>
 struct Scope_Exit {
     Scope_Exit(F f) : f(f) {}

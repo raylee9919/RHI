@@ -8,4 +8,5 @@ target("Renderer")
     add_headerfiles("*.h")
     add_files("*.cpp")
 
+    add_deps("Input");
     add_deps("RHI");

@@ -82,8 +82,8 @@ int ENGINE_MAIN(int argc, const char** argv)
     (void)argc;
     (void)argv;
 
-    uint width = 1920, height = 1080;
-    //uint width = 2560, height = 1440;
+    //uint width = 1920, height = 1080;
+    uint width = 2560, height = 1440;
 
     Input_System* input = new Input_System;
     Window* window = Window::Create("Hello", width, height, input);
@@ -138,15 +138,15 @@ int ENGINE_MAIN(int argc, const char** argv)
 
     // @Temporary: Camera
     //
-    constexpr f32 aspect_ratio = 9.f / 16.f;
-    constexpr f32 near_z       = 0.1f;
-    constexpr f32 far_z        = 10000.0f;
     Camera* camera = new Camera;
     {
-        camera->position  = vec4(0.f, 300.f, 0.f, 1.f);
-        camera->yaw       = 0.0f;
-        camera->pitch     = 0.0f;
-        camera->speed     = 128.0f;
+        camera->position     = vec4(0.f, 300.f, 0.f, 1.f);
+        camera->aspect_ratio = 9.f / 16.f;
+        camera->near_z       = 0.1f;
+        camera->far_z        = 10000.0f;
+        camera->yaw          = 0.0f;
+        camera->pitch        = 0.0f;
+        camera->speed        = 128.0f;
     }
 
     // @Temporary: Load model
@@ -265,78 +265,7 @@ int ENGINE_MAIN(int argc, const char** argv)
             constexpr f32 dt = 1.f / 60.f;
             for (;time_elapsed >= dt; time_elapsed -= dt)
             {
-                // @Temporary: Update camera
-                //
-                vec3 forward;
-                {
-                    forward.x = cos(camera->pitch) * cos(camera->yaw);
-                    forward.y = sin(camera->pitch);
-                    forward.z = cos(camera->pitch) * sin(camera->yaw);
-                    forward   = Normalize(forward);
-                }
-
-                vec3 right = Cross(forward, vec3(0.f, 1.f, 0.f));
-
-                f32 move_speed = camera->speed;
-                if (input->key_is_down[KEY_LEFT_SHIFT])
-                {
-                    move_speed *= 3.0f;
-                }
-
-                if (input->key_is_down[KEY_E])
-                {
-                    camera->position += ( vec4(0.f, 1.f, 0.f, 0.f) * dt * move_speed );
-                }
-
-                if (input->key_is_down[KEY_Q])
-                {
-                    camera->position -= ( vec4(0.f, 1.f, 0.f, 0.f) * dt * move_speed );
-                }
-
-                if (input->key_is_down[KEY_W])
-                {
-                    camera->position += ( vec4(forward, 0.f) * dt * move_speed );
-                }
-
-                if (input->key_is_down[KEY_S])
-                {
-                    camera->position -= ( vec4(forward, 0.f) * dt * move_speed );
-                }
-
-                if (input->key_is_down[KEY_D])
-                {
-                    camera->position += ( vec4(right, 0.f) * dt * move_speed );
-                }
-
-                if (input->key_is_down[KEY_A])
-                {
-                    camera->position -= ( vec4(right, 0.f) * dt * move_speed );
-                }
-
-                if (input->mouse_is_down[MOUSE_LEFT])
-                {
-                    if (!input->mouse_was_down[MOUSE_LEFT])
-                    {
-                        camera->last_mouse_x = input->current_mouse_x;
-                        camera->last_mouse_y = input->current_mouse_y;
-                    }
-                    else
-                    {
-                        f32 dx = input->current_mouse_x - camera->last_mouse_x;
-                        f32 dy = input->current_mouse_y - camera->last_mouse_y;
-
-                        f32 speed = 0.25f;
-                        camera->yaw   += (speed * dx * dt);
-                        camera->pitch -= (speed * dy * dt);
-
-                        camera->last_mouse_x = input->current_mouse_x;
-                        camera->last_mouse_y = input->current_mouse_y;
-                    }
-                }
-
-                camera->view      = m4x4::LookToLH(camera->position.xyz, forward, vec3(0.f, 1.f, 0.f));
-                camera->proj      = m4x4::PerspectiveLH(DegreeToRadian(100.0f), aspect_ratio, near_z, far_z);
-                camera->view_proj = camera->proj * camera->view;
+                camera->Update(dt, input);
             }
             
             {
