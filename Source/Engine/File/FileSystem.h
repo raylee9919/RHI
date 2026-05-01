@@ -7,4 +7,5 @@
 namespace Engine
 {
     namespace FS = std::filesystem;
+    namespace file_sys = std::filesystem;
 }

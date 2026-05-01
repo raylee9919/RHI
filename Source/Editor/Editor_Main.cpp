@@ -11,6 +11,7 @@
 #include "GFX/gfx.h"
 #include "Shader/DXIL/DXIL_Compiler.h"
 #include "Renderer/Renderer.h"
+#include "File/FileSystem.h"
 
 #include "ThirdParty/DirectX/Include/d3d12.h"
 #include "ThirdParty/DirectX/Include/d3dx12/d3dx12.h"
@@ -82,6 +83,11 @@ int ENGINE_MAIN(int argc, const char** argv)
     (void)argc;
     (void)argv;
 
+
+    file_sys::path project_dir = "C:/dev/swl/RHI/Project";
+    file_sys::path asset_dir   = project_dir / "Asset";
+
+
     uint width = 1920, height = 1080;
     //uint width = 2560, height = 1440;
 
@@ -145,14 +151,14 @@ int ENGINE_MAIN(int argc, const char** argv)
         camera->fov          = 90.0f;
         camera->near_z       = 0.1f;
         camera->far_z        = 10000.0f;
-        camera->yaw          = 0.0f;
+        camera->yaw          = PI * 0.5f;
         camera->pitch        = 0.0f;
         camera->speed        = 128.0f;
     }
 
     // @Temporary: Load model
     //
-    Scene_Component* sponza = LoadGLTF(gfx_state, "C:/dev/swl/Untitled/Data/Model/Sponza/Sponza.gltf");
+    Scene_Component* sponza = LoadGLTF(gfx_state, (asset_dir / "Model/Sponza/Sponza.gltf").string());
     CORE_ASSERT(sponza);
     root_component->children.push_back(sponza);
 
@@ -160,7 +166,7 @@ int ENGINE_MAIN(int argc, const char** argv)
     //
     Pipeline_State* pipeline_state = new Pipeline_State;
     {
-        String path = "C:/dev/swl/Untitled/Data/Shader/HLSL/Triangle.hlsl";
+        String path = (asset_dir / "Shader/HLSL/Triangle.hlsl").string();
         auto intermediate_pso = dx12CreateIntermediatePipelineState(compiler, path, is_debug);
         InitPipelineState(device, &intermediate_pso, pipeline_state);
     }
@@ -360,22 +366,6 @@ int ENGINE_MAIN(int argc, const char** argv)
 
         swap_chain->current_frame_index = swap_chain->m_swap_chain->GetCurrentBackBufferIndex();
     }
-
-    // Cleanup
-    //
-    Window::Destroy(window);
-
-    DeinitPipeline(pipeline_state);
-
-    DeinitCompiler(compiler);
-
-    DeinitFence(fence);
-    DeinitSwapChain(swap_chain);
-    DeinitDescriptorHeap(cbv_srv_uav_heap);
-    DeinitDescriptorHeap(rtv_heap);
-    DeinitCommandList(cmd_list);
-    DeinitCommandQueue(cmd_queue);
-    DeinitDevice(device);
 
     return 0;
 }
