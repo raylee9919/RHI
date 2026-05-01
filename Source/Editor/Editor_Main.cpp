@@ -82,8 +82,8 @@ int ENGINE_MAIN(int argc, const char** argv)
     (void)argc;
     (void)argv;
 
-    //uint width = 1920, height = 1080;
-    uint width = 2560, height = 1440;
+    uint width = 1920, height = 1080;
+    //uint width = 2560, height = 1440;
 
     Input_System* input = new Input_System;
     Window* window = Window::Create("Hello", width, height, input);
