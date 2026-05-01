@@ -14,12 +14,13 @@ namespace Engine
     {
         void Camera::Update(f32 dt, Input_System* input)
         {
-            vec3 forward;
+            vec3 forward = vec3(0.f, 0.f, 1.f);
             {
-                forward.x = cos(pitch) * cos(yaw);
-                forward.y = sin(pitch);
-                forward.z = cos(pitch) * sin(yaw);
-                forward   = Normalize(forward);
+                vec4 f = YRotation(yaw) * XRotation(pitch) * vec4(forward, 0.f);
+                //forward.x = cos(pitch) * cos(yaw);
+                //forward.y = sin(pitch);
+                //forward.z = cos(pitch) * sin(yaw);
+                forward = Normalize(f.xyz);
             }
 
             vec3 right = Cross(forward, vec3(0.f, 1.f, 0.f));
@@ -77,7 +78,7 @@ namespace Engine
                     f32 rot_speed = 0.125f;
                     yaw   += (rot_speed * dx * dt);
                     pitch -= (rot_speed * dy * dt);
-                    yaw   = FMod(yaw, 360.0f);
+                    yaw   = FMod(yaw, PI * 2.f);
                     pitch = Clamp(pitch, -PI * 0.45f, PI * 0.45f);
 
                     last_mouse_x = input->current_mouse_x;
@@ -86,7 +87,7 @@ namespace Engine
             }
 
             view      = m4x4::LookToLH(position.xyz, forward, vec3(0.f, 1.f, 0.f));
-            proj      = m4x4::PerspectiveLH(DegreeToRadian(100.0f), aspect_ratio, near_z, far_z);
+            proj      = m4x4::PerspectiveLH(DegreeToRadian(fov), aspect_ratio, near_z, far_z);
             view_proj = proj * view;
         }
     }

@@ -242,4 +242,94 @@ namespace Engine
         f32 f = fmodf(l, r);
         return f;
     }
+
+    ENGINE_API m4x4 XRotation(const f32 radian)
+    {
+        f32 c = cos(radian);
+        f32 s = sin(radian);
+
+        m4x4 m;
+
+        m._11 = 1.0f;
+        m._12 = 0.0f;
+        m._13 = 0.0f;
+        m._14 = 0.0f;
+
+        m._21 = 0.0f;
+        m._22 = c;
+        m._23 = s;
+        m._24 = 0.0f;
+
+        m._31 = 0.0f;
+        m._32 = -s;
+        m._33 = c;
+        m._34 = 0.0f;
+
+        m._41 = 0.0f;
+        m._42 = 0.0f;
+        m._43 = 0.0f;
+        m._44 = 1.0f;
+
+        return m;
+    }
+
+    ENGINE_API m4x4 YRotation(const f32 radian)
+    {
+        f32 c = cos(radian);
+        f32 s = sin(radian);
+
+        m4x4 m;
+
+        m._11 = c;
+        m._12 = 0.0f;
+        m._13 = -s;
+        m._14 = 0.0f;
+
+        m._21 = 0.0f;
+        m._22 = 1.0f;
+        m._23 = 0.0f;
+        m._24 = 0.0f;
+
+        m._31 = s;
+        m._32 = 0.0f;
+        m._33 = c;
+        m._34 = 0.0f;
+
+        m._41 = 0.0f;
+        m._42 = 0.0f;
+        m._43 = 0.0f;
+        m._44 = 1.0f;
+
+        return m;
+    }
+
+    ENGINE_API m4x4 ZRotation(const f32 radian)
+    {
+        f32 c = cos(radian);
+        f32 s = sin(radian);
+
+        m4x4 m;
+
+        m._11 = c;
+        m._12 = s;
+        m._13 = 0.0f;
+        m._14 = 0.0f;
+
+        m._21 = -s;
+        m._22 = c;
+        m._23 = 0.0f;
+        m._24 = 0.0f;
+
+        m._31 = 0.0f;
+        m._32 = 0.0f;
+        m._33 = 1.0f;
+        m._34 = 0.0f;
+
+        m._41 = 0.0f;
+        m._42 = 0.0f;
+        m._43 = 0.0f;
+        m._44 = 1.0f;
+
+        return m;
+    }
 }

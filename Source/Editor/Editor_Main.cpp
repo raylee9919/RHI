@@ -142,6 +142,7 @@ int ENGINE_MAIN(int argc, const char** argv)
     {
         camera->position     = vec4(0.f, 300.f, 0.f, 1.f);
         camera->aspect_ratio = 9.f / 16.f;
+        camera->fov          = 90.0f;
         camera->near_z       = 0.1f;
         camera->far_z        = 10000.0f;
         camera->yaw          = 0.0f;

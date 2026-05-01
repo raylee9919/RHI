@@ -6,7 +6,7 @@
 
 #include <immintrin.h>
 
-#define PI (3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117067982148086513282306647093844)
+#define PI (3.14159265358979323846264338327950288)
 
 namespace Engine
 {
@@ -109,4 +109,8 @@ namespace Engine
     ENGINE_API vec4& operator -= (vec4& l, const vec4 r);
 
     ENGINE_API f32 FMod(const f32 l, const f32 r);
+
+    ENGINE_API m4x4 XRotation(const f32 radian);
+    ENGINE_API m4x4 YRotation(const f32 radian);
+    ENGINE_API m4x4 ZRotation(const f32 radian);
 }

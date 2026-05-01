@@ -36,6 +36,7 @@ namespace Engine
             vec4 position;
 
             f32 aspect_ratio;
+            f32 fov;
             f32 near_z;
             f32 far_z;
             f32 yaw;
