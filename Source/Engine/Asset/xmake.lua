@@ -9,3 +9,6 @@ target("Asset")
     add_files("*.cpp")
 
     add_deps("cgltf");
+    add_deps("MikkTSpace");
+    add_deps("json");
+    add_deps("stb");

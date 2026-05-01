@@ -57,6 +57,7 @@ PS_Input VS_Main(uint vertex_id : SV_VertexID)
     float4 position = float4(vert.position, 1.0);
     float4x4 view_proj = camera.view_proj;
     float4 clip_space_position = mul(view_proj, position);
+
     result.sv_position = clip_space_position;
     result.position    = vert.position;
     result.normal      = vert.normal;
@@ -71,12 +72,39 @@ float4 PS_Main(PS_Input input) : SV_TARGET
     StructuredBuffer<Material> material_buf = ResourceDescriptorHeap[push.material_id];
     Material material = material_buf[0];
 
+    ConstantBuffer<Camera> camera = ResourceDescriptorHeap[push.camera_id];
+
     SamplerState sampler_linear = SamplerDescriptorHeap[material.sampler_id];
     Texture2D albedo_tex = ResourceDescriptorHeap[material.albedo_id];
     float4 albedo = albedo_tex.Sample(sampler_linear, input.uv);
 
-    Texture2D normal_tex = ResourceDescriptorHeap[material.normal_id];
-    float3 normal = normal_tex.Sample(sampler_linear, input.uv).xyz;
+    float3 N = normalize(input.normal);
+    float3 T = normalize(input.tangent.xyz);
+    float3 B = cross(N, T) * input.tangent.w;
+    float3x3 TBN = float3x3(T, B, N);
 
-    return albedo;
+    // Compute normal.
+    //
+    float3 n;
+    int normal_id = material.normal_id;
+    if (normal_id == -1) {
+        n = input.normal;
+    } else {
+        Texture2D normal_tex = ResourceDescriptorHeap[normal_id];
+        float3 normal_texel = normal_tex.Sample(sampler_linear, input.uv).xyz * 2.0 - 1.0;
+        n = mul(normal_texel, TBN);
+    }
+
+
+    // @Temporary: Debug light scene
+    //
+    float3 radiance = float3(1.5, 1.5, 1.5);
+    float3 l = normalize(float3(1.0, 2.0, 0.0));
+    float3 v = normalize(camera.position.xyz - input.position);
+
+    float attenuation = max(dot(n, l), 0.0);
+
+    float3 result = attenuation * albedo.xyz;
+
+    return float4(result, 1.0);
 }

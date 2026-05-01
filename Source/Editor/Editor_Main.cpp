@@ -310,7 +310,7 @@ int ENGINE_MAIN(int argc, const char** argv)
             CmdTransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
             CmdSetRenderTarget(cmd_list, &swap_chain->m_descriptors[swap_chain->current_frame_index], &dsv);
-            CmdClearRTV(cmd_list, swap_chain->m_descriptors[swap_chain->current_frame_index], 0.0f, 0.0f, 0.0f, 1.0f);
+            CmdClearRTV(cmd_list, swap_chain->m_descriptors[swap_chain->current_frame_index], 0.3f, 0.3f, 0.6f, 1.0f);
 
             CmdClearDSV(cmd_list, dsv, 1.0f, 0u, width, height);
 

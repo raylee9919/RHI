@@ -9,6 +9,8 @@
 
 #include "ThirdParty/cgltf/Include/cgltf.h"
 
+#include "ThirdParty/MikkTSpace/Include/mikktspace.h"
+
 #include "ThirdParty/json/Include/json.h"
 
 #include "ThirdParty/stb/Include/stb_image.h"
@@ -59,6 +61,57 @@ namespace Engine
         return v;
     }
 
+    INTERNAL int mikkt_get_num_faces(const SMikkTSpaceContext* ctx)
+    {
+        Mesh* mesh = (Mesh *)ctx->m_pUserData;
+        return mesh->indices.size() / 3;
+    }
+
+    INTERNAL int mikkt_get_num_vertices_of_face(const SMikkTSpaceContext* ctx, const int face)
+    {
+        return 3;
+    }
+
+    INTERNAL void mikkt_get_position(const SMikkTSpaceContext* ctx, float out[], const int face, const int vert)
+    {
+        Mesh* mesh = (Mesh *)ctx->m_pUserData;
+        u32 index = mesh->indices[face * 3 + vert];
+        vec3 pos = mesh->vertices[index].position;
+        out[0] = pos.x;
+        out[1] = pos.y;
+        out[2] = pos.z;
+    }
+
+    INTERNAL void mikkt_get_normal(const SMikkTSpaceContext* ctx, float out[], const int face, const int vert)
+    {
+        Mesh* mesh = (Mesh *)ctx->m_pUserData;
+        u32 index = mesh->indices[face * 3 + vert];
+        vec3 normal = mesh->vertices[index].normal;
+        out[0] = normal.x;
+        out[1] = normal.y;
+        out[2] = normal.z;
+    }
+
+    INTERNAL void mikkt_get_tex_coord(const SMikkTSpaceContext* ctx, float out[], const int face, const int vert)
+    {
+        Mesh* mesh = (Mesh *)ctx->m_pUserData;
+        u32 index = mesh->indices[face * 3 + vert];
+        vec2 uv = mesh->vertices[index].uv;
+        out[0] = uv.x;
+        out[1] = uv.y;
+    }
+
+    INTERNAL void mikkt_set_tspace_basic(const SMikkTSpaceContext* ctx, const float in[], const float sign, const int face, const int vert)
+    {
+        Mesh* mesh = (Mesh *)ctx->m_pUserData;
+        u32 index = mesh->indices[face * 3 + vert];
+        vec4* tangent = &mesh->vertices[index].tangent;
+        tangent->x = in[0];
+        tangent->y = in[1];
+        tangent->z = in[2];
+        tangent->w = sign;
+    }
+
     INTERNAL Scene_Component* cgltfParseNode(GFX::State* gfx, cgltf_data* data, cgltf_node* node, Array<s32>& material_ids)
     {
         if (!gfx) 
@@ -91,6 +144,8 @@ namespace Engine
             cgltf_accessor* uv_acc     = cgltfGetAccessorFromType(prim, cgltf_attribute_type_texcoord);
             cgltf_accessor* tan_acc    = cgltfGetAccessorFromType(prim, cgltf_attribute_type_tangent);
 
+            bool should_generate_tangent = false;
+
             CORE_ASSERT(pos_acc);
 
             uint32 num_verts = (uint32)pos_acc->count;
@@ -121,8 +176,7 @@ namespace Engine
                     vec4 tangent = cgltfReadVec4FromAccessor(tan_acc, vi);
                     vert.tangent = tangent;
                 } else {
-                    // @Todo
-                    vert.tangent = vec4(1.f, 0.f, 0.f, 0.f);
+                    should_generate_tangent = true;
                 }
 
                 aabb.Expand(vert.position);
@@ -167,6 +221,27 @@ namespace Engine
             M->vertices = std::move(verts);
             M->indices  = std::move(indices);
             M->aabb     = aabb;
+
+            // Generate tangents if needed.
+            //
+            if (should_generate_tangent)
+            {
+                SMikkTSpaceInterface hooks = {
+                    .m_getNumFaces          = mikkt_get_num_faces,
+                    .m_getNumVerticesOfFace = mikkt_get_num_vertices_of_face,
+                    .m_getPosition          = mikkt_get_position,
+                    .m_getNormal            = mikkt_get_normal,
+                    .m_getTexCoord          = mikkt_get_tex_coord,
+                    .m_setTSpaceBasic       = mikkt_set_tspace_basic
+                };
+
+                SMikkTSpaceContext ctx = {
+                    .m_pInterface = &hooks,
+                    .m_pUserData = M
+                };
+
+                CORE_ASSERT(genTangSpaceDefault(&ctx));
+            }
 
             auto vb = GFX::AllocStructuredBuffer(gfx, M->vertices.data(), sizeof(M->vertices[0]), M->vertices.size());
             M->vertex_buffer = vb.first;
