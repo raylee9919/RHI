@@ -468,7 +468,7 @@ namespace Engine
                 .normal   = CreateSRV(normal_path),
                 .orm      = CreateSRV(orm_path),
                 .emissive = CreateSRV(emissive_path),
-                .sampler  = CreateSampler()
+                .sampler  = CreateSampler(),
             };
 
             auto buf_and_desc = GFX::AllocStructuredBuffer(gfx, &material, sizeof(material), 1);

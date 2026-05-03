@@ -16,14 +16,14 @@ namespace Engine
         {
             vec3 forward = vec3(0.f, 0.f, 1.f);
             {
-                vec4 f = YRotation(yaw) * XRotation(pitch) * vec4(forward, 0.f);
+                vec4 f = y_rotation(yaw) * x_rotation(pitch) * vec4(forward, 0.f);
                 //forward.x = cos(pitch) * cos(yaw);
                 //forward.y = sin(pitch);
                 //forward.z = cos(pitch) * sin(yaw);
-                forward = Normalize(f.xyz);
+                forward = normalize(f.xyz);
             }
 
-            vec3 right = Cross(forward, vec3(0.f, 1.f, 0.f));
+            vec3 right = cross(forward, vec3(0.f, 1.f, 0.f));
 
             f32 move_speed = speed;
             if (input->key_is_down[KEY_LEFT_SHIFT])
@@ -78,7 +78,7 @@ namespace Engine
                     f32 rot_speed = 0.125f;
                     yaw   += (rot_speed * dx * dt);
                     pitch -= (rot_speed * dy * dt);
-                    yaw   = FMod(yaw, PI * 2.f);
+                    yaw   = fmod(yaw, PI * 2.f);
                     pitch = Clamp(pitch, -PI * 0.45f, PI * 0.45f);
 
                     last_mouse_x = input->current_mouse_x;

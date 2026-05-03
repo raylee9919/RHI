@@ -38,13 +38,13 @@ namespace Engine
         return v;
     }
 
-    f32 Dot(const vec3& l, const vec3& r)
+    f32 dot(const vec3& l, const vec3& r)
     {
         f32 f = l.x * r.x + l.y * r.y + l.z * r.z;
         return f;
     }
 
-    vec3 Cross(const vec3& l, const vec3& r)
+    vec3 cross(const vec3& l, const vec3& r)
     {
         vec3 v;
         v.x = l.y * r.z - l.z * r.y;
@@ -53,7 +53,7 @@ namespace Engine
         return v;
     }
 
-    vec3 Normalize(const vec3& v)
+    vec3 normalize(const vec3& v)
     {
         vec3 result;
 
@@ -198,13 +198,13 @@ namespace Engine
     {
         m4x4 m;
 
-        vec3 z = Normalize(at - eye);
-        vec3 x = Normalize(Cross(z, up));
-        vec3 y = Cross(x, z);
+        vec3 z = normalize(at - eye);
+        vec3 x = normalize(cross(z, up));
+        vec3 y = cross(x, z);
 
-        m.rows[0] = vec4(x, -Dot(x, eye));
-        m.rows[1] = vec4(y, -Dot(y, eye));
-        m.rows[2] = vec4(z, -Dot(z, eye));
+        m.rows[0] = vec4(x, -dot(x, eye));
+        m.rows[1] = vec4(y, -dot(y, eye));
+        m.rows[2] = vec4(z, -dot(z, eye));
         m.rows[3] = vec4(0.f, 0.f, 0.f, 1.f);
 
         return m;
@@ -237,13 +237,13 @@ namespace Engine
         lane = _mm_setr_ps(f1, f2, f3, f4);
     }
 
-    ENGINE_API f32 FMod(const f32 l, const f32 r)
+    ENGINE_API f32 fmod(const f32 l, const f32 r)
     {
         f32 f = fmodf(l, r);
         return f;
     }
 
-    ENGINE_API m4x4 XRotation(const f32 radian)
+    ENGINE_API m4x4 x_rotation(const f32 radian)
     {
         f32 c = cos(radian);
         f32 s = sin(radian);
@@ -273,7 +273,7 @@ namespace Engine
         return m;
     }
 
-    ENGINE_API m4x4 YRotation(const f32 radian)
+    ENGINE_API m4x4 y_rotation(const f32 radian)
     {
         f32 c = cos(radian);
         f32 s = sin(radian);
@@ -303,7 +303,7 @@ namespace Engine
         return m;
     }
 
-    ENGINE_API m4x4 ZRotation(const f32 radian)
+    ENGINE_API m4x4 z_rotation(const f32 radian)
     {
         f32 c = cos(radian);
         f32 s = sin(radian);

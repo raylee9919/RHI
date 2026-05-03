@@ -49,14 +49,16 @@ template <typename F>
 Scope_Exit<F> scope_exit_make(F f) {
     return Scope_Exit<F>(f);
 };
-#define Defer(code) \
+#define defer(code) \
     auto CONCAT2(scope_exit_, __LINE__) = scope_exit_make([=](){code;})
 
 
 #if PLATFORM_WINDOWS
 #  define CORE_ASSERT(exp, ...) if (!(exp)) { __debugbreak(); }
+#  define assert(exp, ... )     if (!(exp)) { __debugbreak(); }
 #else
 #  define CORE_ASSERT(exp, ...) if (!(exp)) { *(volatile int*)0 = 0; }
+#  define assert(exp, ... )     if (!(exp)) { *(volatile int*)0 = 0; }
 #endif
 
 

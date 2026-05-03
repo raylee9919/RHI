@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Core/SE_Basics.h"
+#include "Core/SE_String.h"
 
 #include "Input/Input.h"
 
@@ -12,28 +13,18 @@ struct SDL_Window;
 
 namespace Engine 
 {
-    class ENGINE_API Window
+    struct ENGINE_API Window
     {
-        public:
-            static Window* Create(const char* title, int width, int height, Input_System* input_system);
-            static void Destroy(Window* window);
+        SDL_Window*     sdl;
+        int             width;
+        int             height;
+        bool            is_running;
+        Input_System*   my_input_system;
 
-            FORCE_INLINE bool IsOpen()   { return (bool)m_running; }
-            FORCE_INLINE u32 GetWidth()  { return m_width; }
-            FORCE_INLINE u32 GetHeight() { return m_height; }
-
-            void* GetPlatformWindow();
-
-            bool PollEvents();
-
-
-        private:
-            SDL_Window* sdl;
-
-            Input_System* m_input_system;
-
-            b32 m_running;
-            u32 m_width;
-            u32 m_height;
+        [[nodiscard]] bool  poll_events();
+        [[nodiscard]] void* get_platform_window();
     };
+
+    ENGINE_API Window*  create_window(String title, int width, int height);
+    ENGINE_API void     destroy_window(Window* window);
 }

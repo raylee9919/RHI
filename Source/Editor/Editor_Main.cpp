@@ -1,371 +1,135 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-#include "Core/SE_Array.h"
-
+#include "Core/SE_Basics.h"
+#include "Core/SE_String.h"
 #include "Window/Window.h"
-#include "OS/OS_Main.h"
-#include "IO/IO.h"
-#include "Asset/SE_Asset.h"
-
-#include "RHI/DX12/RHI_DX12.h"
-#include "GFX/gfx.h"
-#include "Shader/DXIL/DXIL_Compiler.h"
-#include "Renderer/Renderer.h"
-#include "File/FileSystem.h"
-
-#include "ThirdParty/DirectX/Include/d3d12.h"
-#include "ThirdParty/DirectX/Include/d3dx12/d3dx12.h"
-#include "ThirdParty/DXC/Include/d3d12shader.h"
-
+#include "DX12.h"
 
 using namespace Engine;
-using namespace DXIL;
-using namespace DX12;
-using namespace Render;
 
-
-Array<D3D12_INPUT_ELEMENT_DESC> 
-dx12ReflectInputParameters(ID3D12ShaderReflection* reflection)
+int main()
 {
-    D3D12_SHADER_DESC desc;
-    reflection->GetDesc(&desc);
+    String title = "This is a window";
+    int window_width  = 1920;
+    int window_height = 1080;
 
-    uint num_input_params = desc.InputParameters;
-    Array <D3D12_INPUT_ELEMENT_DESC> input_element_descs(num_input_params);
+    Window* window = create_window(title, window_width, window_height);
 
-    for (uint i = 0; i < num_input_params; ++i)
+    auto* device    = dx12_create_device();
+    auto* cmd_queue = dx12_create_command_queue(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
+    auto* cmd_list  = dx12_create_command_list(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
+    auto* fence     = dx12_create_fence(device);
+
+    auto* rtv_heap     = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV,          64);
+    auto* dsv_heap     = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV,          64);
+    auto* scu_heap     = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 256);
+    auto* sampler_heap = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,      64);
+
+    u32 tex_width = 1920, tex_height = 1080;
+
+    ID3D12Resource* color_resource = nullptr;
     {
-        D3D12_SIGNATURE_PARAMETER_DESC desc;
-        reflection->GetInputParameterDesc(i, &desc);
-
-        D3D12_INPUT_ELEMENT_DESC input_element_desc = {
-            .SemanticName      = desc.SemanticName,
-            .SemanticIndex     = desc.SemanticIndex,
-            .Format            = ToDXGIFormat(desc.ComponentType, desc.Mask),
-            .InputSlot         = 0u, // @Todo: wtf is this.
-            .AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT,
-            .InputSlotClass    = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-
-            // @Todo: This might be an issue when doing instanced rendering.
-            .InstanceDataStepRate = 0
+        u32 num_samples = 1;
+        u32 alignment = 0;
+        DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        D3D12_HEAP_PROPERTIES heap_prop = {
+            .Type                 = D3D12_HEAP_TYPE_DEFAULT,
+            .CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+            .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+            .CreationNodeMask     = 1,
+            .VisibleNodeMask      = 1
+        };
+        D3D12_HEAP_FLAGS heap_flags = D3D12_HEAP_FLAG_NONE;
+        D3D12_RESOURCE_FLAGS resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+        D3D12_RESOURCE_DESC desc = {
+            .Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            .Alignment        = alignment,
+            .Width            = tex_width,
+            .Height           = tex_height,
+            .DepthOrArraySize = 1,
+            .MipLevels        = 1,
+            .Format           = format,
+            .SampleDesc       = {
+                .Count   = num_samples,
+                .Quality = 0
+            },
+            .Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+            .Flags            = resource_flags,
+        };
+        D3D12_RESOURCE_STATES init_state = D3D12_RESOURCE_STATE_COMMON;
+        D3D12_CLEAR_VALUE clear_value = {
+            .Format = format,
+            .Color  = { 1.0f, 0.2f, 1.0f, 1.0f }
         };
 
-        input_element_descs[i] = input_element_desc;
+        if (FAILED(device->native_device->CreateCommittedResource(&heap_prop, heap_flags, &desc, init_state, &clear_value, IID_PPV_ARGS(&color_resource)))) {
+            assert(0);
+        }
     }
 
-    return input_element_descs;
-}
-
-Intermediate_Pipeline_State
-dx12CreateIntermediatePipelineState(DXIL::Compiler* compiler, String& path, bool is_debug)
-{
-    Intermediate_Pipeline_State result = {};
-
-    u8* src = nullptr;
-    u64 sz = 0;
-
-    sz = IO::ReadEntireFile(path, nullptr);
-    src = new u8[sz];
-    IO::ReadEntireFile(path, src);
-
-    CompiledShader vs_module = CompileShader(compiler, is_debug, src, sz, "VS_Main", "vs_6_6");
-    CompiledShader ps_module = CompileShader(compiler, is_debug, src, sz, "PS_Main", "ps_6_6");
-
-    result.vs_module        = vs_module;
-    result.ps_module        = ps_module;
-    result.input_parameters = dx12ReflectInputParameters(vs_module.reflection);
-
-    return result;
-}
-
-int ENGINE_MAIN(int argc, const char** argv)
-{
-    (void)argc;
-    (void)argv;
-
-
-    file_sys::path project_dir = "C:/dev/swl/RHI/Project";
-    file_sys::path asset_dir   = project_dir / "Asset";
-
-
-    uint width = 1920, height = 1080;
-    //uint width = 2560, height = 1440;
-
-    Input_System* input = new Input_System;
-    Window* window = Window::Create("Hello", width, height, input);
-
-    Device* device = new Device;
-    InitDevice(device, true);
-
-    CommandQueue* cmd_queue = new CommandQueue;
-    InitCommandQueue(device, cmd_queue);
-
-    CommandList* cmd_list = new CommandList;
-    InitCommandList(device, cmd_list, D3D12_COMMAND_LIST_TYPE_DIRECT);
-
-    // Create heaps
-    //
-    DescriptorHeap* rtv_heap = new DescriptorHeap;
-    InitDescriptorHeap(device, rtv_heap, 53, RHI_DESCRIPTOR_KIND_RTV);
-
-    DescriptorHeap* dsv_heap = new DescriptorHeap;
-    InitDescriptorHeap(device, dsv_heap, 256, RHI_DESCRIPTOR_KIND_DSV);
-
-    DescriptorHeap* cbv_srv_uav_heap = new DescriptorHeap;
-    InitDescriptorHeap(device, cbv_srv_uav_heap, 256, RHI_DESCRIPTOR_KIND_CBV_SRV_UAV);
-
-    DescriptorHeap* sampler_heap = new DescriptorHeap;
-    InitDescriptorHeap(device, sampler_heap, 256, RHI_DESCRIPTOR_KIND_SAMPLER);
-
-    // Create window and surface
-    //
-    HWND hwnd = (HWND)window->GetPlatformWindow();
-    uint num_frames = 3;
-    SwapChain* swap_chain = new SwapChain;
-    InitSwapChain(device, swap_chain, rtv_heap, cmd_queue, hwnd, width, height, num_frames);
-
-    Fence* fence = new Fence;
-    InitFence(device, fence);
-
-    GFX::State* gfx_state = new GFX::State;
-    GFX::Init(gfx_state, device, cmd_list, cmd_queue, fence, cbv_srv_uav_heap, sampler_heap);
-
-    Compiler* compiler = new Compiler;
-    InitCompiler(compiler);
-
-    bool is_debug = false;
-#if BUILD_DEBUG
-    is_debug = true;
-#endif
-
-    // @Temporary: Root
-    //
-    Scene_Component* root_component = new Scene_Component;
-
-    // @Temporary: Camera
-    //
-    Camera* camera = new Camera;
+    ID3D12Resource* depth_resource = nullptr;
     {
-        camera->position     = vec4(0.f, 300.f, 0.f, 1.f);
-        camera->aspect_ratio = 9.f / 16.f;
-        camera->fov          = 90.0f;
-        camera->near_z       = 0.1f;
-        camera->far_z        = 10000.0f;
-        camera->yaw          = PI * 0.5f;
-        camera->pitch        = 0.0f;
-        camera->speed        = 128.0f;
-    }
-
-    // @Temporary: Load model
-    //
-    Scene_Component* sponza = LoadGLTF(gfx_state, (asset_dir / "Model/Sponza/Sponza.gltf").string());
-    CORE_ASSERT(sponza);
-    root_component->children.push_back(sponza);
-
-    // @Temporary: Create PSO
-    //
-    Pipeline_State* pipeline_state = new Pipeline_State;
-    {
-        String path = (asset_dir / "Shader/HLSL/Triangle.hlsl").string();
-        auto intermediate_pso = dx12CreateIntermediatePipelineState(compiler, path, is_debug);
-        InitPipelineState(device, &intermediate_pso, pipeline_state);
-    }
-
-
-    Descriptor camera_desc = AllocDescriptor(cbv_srv_uav_heap);
-    Buffer camera_buffer;
-    {
-        // Create buffer.
-        //
-        uint alignment = 256;
-        uint size = sizeof(Camera);
-        uint aligned_size = AlignUp(size, alignment);
-        camera_buffer = Malloc(device, {.size = aligned_size, .heap_kind = RHI_HEAP_KIND_DEFAULT});
-        camera_buffer.m_resource->SetName(L"Camera");
-
-        // Create cbv.
-        //
-        D3D12_CONSTANT_BUFFER_VIEW_DESC view_desc = {
-            .BufferLocation = camera_buffer.m_gpu_address,
-            .SizeInBytes    = aligned_size
+        u32 num_samples = 1;
+        u32 alignment = 0;
+        DXGI_FORMAT format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        D3D12_HEAP_PROPERTIES heap_prop = {
+            .Type                 = D3D12_HEAP_TYPE_DEFAULT,
+            .CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+            .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+            .CreationNodeMask     = 1,
+            .VisibleNodeMask      = 1
         };
-        device->m_device->CreateConstantBufferView(&view_desc, camera_desc.cpu_handle);
-    }
+        D3D12_HEAP_FLAGS heap_flags = D3D12_HEAP_FLAG_NONE;
+        D3D12_RESOURCE_FLAGS resource_flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+        D3D12_RESOURCE_DESC desc = {
+            .Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            .Alignment        = alignment,
+            .Width            = tex_width,
+            .Height           = tex_height,
+            .DepthOrArraySize = 1,
+            .MipLevels        = 1,
+            .Format           = format,
+            .SampleDesc       = {
+                .Count   = num_samples,
+                .Quality = 0
+            },
+            .Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+            .Flags            = resource_flags,
+        };
+        D3D12_RESOURCE_STATES init_state = D3D12_RESOURCE_STATE_COMMON;
+        D3D12_CLEAR_VALUE clear_value = {
+            .Format = format,
+            .DepthStencil = {
+                .Depth = 1.0f, .Stencil = 0u
+            }
+        };
 
-    {
-        uint size = sizeof(Camera);
-
-        u64 staging_buffer_size = GetRequiredIntermediateSize(camera_buffer.m_resource, 0, 1);
-        auto staging_buffer = Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
-
-        void* ptr = Map(staging_buffer);
-        memcpy(ptr, camera, size);
-        Unmap(staging_buffer);
-
-        BeginCommandList(cmd_list);
-        {
-            auto prev1 = CmdTransitionBarrier(cmd_list, &camera_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
-            auto prev2 = CmdTransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-            CmdCopy(cmd_list, camera_buffer, staging_buffer, size);
-            CmdTransitionBarrier(cmd_list, &camera_buffer, prev1);
-            CmdTransitionBarrier(cmd_list, &staging_buffer, prev2);
+        if (FAILED(device->native_device->CreateCommittedResource(&heap_prop, heap_flags, &desc, init_state, &clear_value, IID_PPV_ARGS(&depth_resource)))) {
+            assert(0);
         }
-        EndCommandList(cmd_list);
-        ExecuteCommandList(cmd_queue, cmd_list);
-
-        PlaceFence(cmd_queue, fence);
-        WaitForFence(fence);
-
-        Free(staging_buffer);
     }
 
 
 
+    while (window->is_running) {
+        while (window->poll_events()) {}
+    }
 
-    // @Todo: Is there a way to reflect PushConstant from shader to CPP side?
+    // Cleanups
     //
-    struct Push_Constant
-    {
-        u32 vertex_buffer_id;
-        u32 material_id;
-        u32 camera_id;
-    };
+    depth_resource->Release();
+    color_resource->Release();
 
-    Push_Constant push_constants = {
-        .vertex_buffer_id  = 0,
-        .material_id       = 0,
-        .camera_id         = (u32)camera_desc.m_index
-    };
+    dx12_destroy_descriptor_heap(rtv_heap);
+    dx12_destroy_descriptor_heap(dsv_heap);
+    dx12_destroy_descriptor_heap(scu_heap);
+    dx12_destroy_descriptor_heap(sampler_heap);
+    dx12_destroy_fence(fence);
+    dx12_destroy_command_list(cmd_list);
+    dx12_destroy_command_queue(cmd_queue);
+    dx12_destroy_device(device);
 
-
-    // @Temporary: Allocate depth stencil texture
-    //
-    Texture depth_stencil_texture = AllocTexture(device, {.width = width, .height = height,
-                                                 .depth = 1, .mip_levels = 1,
-                                                 .format = DXGI_FORMAT_D24_UNORM_S8_UINT,
-                                                 .flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,
-                                                 .do_clear = true, .clear_value = {.Format=DXGI_FORMAT_D24_UNORM_S8_UINT, .DepthStencil = {.Depth=1.0f, .Stencil=0}},
-                                                 .init_state = D3D12_RESOURCE_STATE_DEPTH_WRITE});
-    Descriptor dsv = AllocDescriptor(dsv_heap);
-    D3D12_DEPTH_STENCIL_VIEW_DESC dsv_desc = {
-        .Format        = DXGI_FORMAT_D24_UNORM_S8_UINT,
-        .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D,
-        .Flags         = D3D12_DSV_FLAG_NONE,
-        .Texture2D = {
-            .MipSlice = 0
-        }
-    };
-    device->m_device->CreateDepthStencilView(depth_stencil_texture.m_resource, &dsv_desc, dsv.cpu_handle);
-
-
-
-
-
-    while (window->IsOpen()) 
-    {
-        window->PollEvents();
-
-        // Update
-        //
-        {
-            f32 time_elapsed = 0.017f;
-            constexpr f32 dt = 1.f / 60.f;
-            for (;time_elapsed >= dt; time_elapsed -= dt)
-            {
-                camera->Update(dt, input);
-            }
-            
-            {
-                uint size = sizeof(Camera);
-
-                u64 staging_buffer_size = GetRequiredIntermediateSize(camera_buffer.m_resource, 0, 1);
-                auto staging_buffer = Malloc(device, { .size = staging_buffer_size, .heap_kind = RHI_HEAP_KIND_UPLOAD });
-
-                void* ptr = Map(staging_buffer);
-                memcpy(ptr, camera, size);
-                Unmap(staging_buffer);
-
-                BeginCommandList(cmd_list);
-                {
-                    auto prev1 = CmdTransitionBarrier(cmd_list, &camera_buffer, D3D12_RESOURCE_STATE_COPY_DEST);
-                    auto prev2 = CmdTransitionBarrier(cmd_list, &staging_buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
-                    CmdCopy(cmd_list, camera_buffer, staging_buffer, size);
-                    CmdTransitionBarrier(cmd_list, &camera_buffer, prev1);
-                    CmdTransitionBarrier(cmd_list, &staging_buffer, prev2);
-                }
-                EndCommandList(cmd_list);
-                ExecuteCommandList(cmd_queue, cmd_list);
-
-                PlaceFence(cmd_queue, fence);
-                WaitForFence(fence);
-
-                Free(staging_buffer);
-            }
-        }
-
-
-        BeginCommandList(cmd_list);
-        {
-            // @Temporary: Update current frame index!
-            CmdTransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-            CmdSetRenderTarget(cmd_list, &swap_chain->m_descriptors[swap_chain->current_frame_index], &dsv);
-            CmdClearRTV(cmd_list, swap_chain->m_descriptors[swap_chain->current_frame_index], 0.3f, 0.3f, 0.6f, 1.0f);
-
-            CmdClearDSV(cmd_list, dsv, 1.0f, 0u, width, height);
-
-            {
-                CmdSetViewport(cmd_list, 0, 0, width, height);
-                CmdSetScissor(cmd_list, 0, 0, width, height);
-
-                ID3D12DescriptorHeap* heaps[] = {
-                    cbv_srv_uav_heap->m_descriptor_heap,
-                    sampler_heap->m_descriptor_heap
-                };
-                cmd_list->m_list->SetDescriptorHeaps(ARRAY_COUNT(heaps), heaps);
-                cmd_list->m_list->SetGraphicsRootSignature(device->m_global_root_signature);
-
-                cmd_list->m_list->SetPipelineState(pipeline_state->m_pso);
-
-                cmd_list->m_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-
-                Stack<Scene_Component*> dfs;
-                dfs.push(root_component);
-
-                while (!dfs.empty())
-                {
-                    auto* node = dfs.top();
-                    dfs.pop();
-
-                    for (auto& mesh : node->meshes)
-                    {
-                        push_constants.vertex_buffer_id = mesh->vertex_buffer_descriptor.m_index;
-                        push_constants.material_id      = mesh->material_id;
-                        CmdSetGraphicsConstants(cmd_list, &push_constants, sizeof(push_constants));
-
-                        CmdSetIndexBuffer(cmd_list, mesh->index_buffer);
-                        CmdDrawIndexed(cmd_list, mesh->indices.size(), 1);
-                    }
-
-                    for (Scene_Component* child : node->children)
-                    {
-                        dfs.push(child);
-                    }
-                }
-            }
-
-            CmdTransitionBarrier(cmd_list, swap_chain->m_resources[swap_chain->current_frame_index], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-        }
-        EndCommandList(cmd_list);
-        ExecuteCommandList(cmd_queue, cmd_list);
-
-        PlaceFence(cmd_queue, fence);
-        Present(swap_chain);
-        WaitForFence(fence);
-
-        swap_chain->current_frame_index = swap_chain->m_swap_chain->GetCurrentBackBufferIndex();
-    }
+    destroy_window(window);
 
     return 0;
 }
