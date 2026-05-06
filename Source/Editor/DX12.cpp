@@ -412,12 +412,12 @@ namespace Engine
         cmd_queue->native_cmd_queue->ExecuteCommandLists(1, lists);
     }
 
-    ENGINE_API void dx12_fence_signal(DX12_Command_Queue* cmd_queue, DX12_Fence* fence)
+    ENGINE_API void dx12_signal_fence(DX12_Command_Queue* cmd_queue, DX12_Fence* fence)
     {
         cmd_queue->native_cmd_queue->Signal(fence->native_fence, ++fence->value);
     }
 
-    ENGINE_API void dx12_fence_wait(DX12_Fence* fence)
+    ENGINE_API void dx12_wait_fence(DX12_Fence* fence)
     {
         if (fence->value > fence->native_fence->GetCompletedValue()) {
             fence->native_fence->SetEventOnCompletion(fence->value, fence->event);
@@ -440,5 +440,83 @@ namespace Engine
     DX12_Descriptor* DX12_Swap_Chain::get_current_rtv()
     {
         return rtvs + current_frame_index;
+    }
+
+    ENGINE_API DX12_Resource* dx12_alloc_resource(DX12_Device* device, DX12_Resource_Desc desc)
+    {
+        DX12_Resource* result = nullptr;
+        ID3D12Resource* resource = nullptr;
+        D3D12_HEAP_PROPERTIES heap_prop = {
+            .Type                 = D3D12_HEAP_TYPE_DEFAULT,
+            .CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+            .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+            .CreationNodeMask     = 1,
+            .VisibleNodeMask      = 1
+        };
+        D3D12_RESOURCE_STATES init_state = D3D12_RESOURCE_STATE_COMMON;
+        D3D12_RESOURCE_DESC res_desc;
+        bool ok = false;
+
+        if (desc.type == DX12_RESOURCE_TYPE_BUFFER) {
+            auto buffer = desc.buffer;
+            res_desc = {
+                .Dimension        = D3D12_RESOURCE_DIMENSION_BUFFER,
+                .Alignment        = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
+                .Width            = buffer.size,
+                .Height           = 1,
+                .DepthOrArraySize = 1,
+                .MipLevels        = 1,
+                .Format           = DXGI_FORMAT_UNKNOWN,
+                .SampleDesc       = {
+                    .Count   = 1,
+                    .Quality = 0
+                },
+                .Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                .Flags            = desc.resource_flags,
+            };
+            
+            if (SUCCEEDED(device->native_device->CreateCommittedResource(&heap_prop, desc.heap_flags, &res_desc, init_state, nullptr, IID_PPV_ARGS(&resource)))) {
+                ok = true;
+            }
+
+        } else if (desc.type == DX12_RESOURCE_TYPE_TEXTURE_2D) {
+            auto tex = desc.texture;
+            res_desc = {
+                .Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                .Alignment        = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT, // @Todo: Correct?
+                .Width            = tex.width,
+                .Height           = tex.height,
+                .DepthOrArraySize = tex.depth,
+                .MipLevels        = tex.mip_levels,
+                .Format           = tex.format,
+                .SampleDesc       = {
+                    .Count   = tex.num_samples,
+                    .Quality = 0
+                },
+                .Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+                .Flags            = desc.resource_flags,
+            };
+
+            if (SUCCEEDED(device->native_device->CreateCommittedResource(&heap_prop, desc.heap_flags, &res_desc, init_state, nullptr, IID_PPV_ARGS(&resource)))) {
+                ok = true;
+            }
+        } else {
+            assert("invalid resource creation type.");
+        }
+
+        if (ok) {
+            result = new DX12_Resource;
+            result->desc = desc;
+            result->native_resource = resource;
+        }
+
+        return result;
+    }
+
+    ENGINE_API void dx12_dealloc_resource(DX12_Resource* resource)
+    {
+        if (resource) {
+            if (resource->native_resource) { resource->native_resource->Release(); }
+        }
     }
 }

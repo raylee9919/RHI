@@ -28,13 +28,13 @@ struct Camera
     float4 position;
 };
 
-struct PushConstants
+struct Push_Constants
 {
     uint vertex_buffer_id;
     uint material_id;
     uint camera_id;
 };
-PUSH_CONSTANTS(PushConstants, push);
+PUSH_CONSTANTS(Push_Constants, push);
 
 struct PS_Input
 {

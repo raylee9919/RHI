@@ -46,10 +46,6 @@ namespace Engine
         int                           index;
     };
 
-    struct DX12_Resource {
-        ID3D12Resource* native_resource;
-    };
-
     struct ENGINE_API DX12_Command_List {
         ID3D12GraphicsCommandList7* native_cmd_list;
         ID3D12CommandAllocator*     native_cmd_allocator;
@@ -77,6 +73,47 @@ namespace Engine
         DX12_Descriptor* get_current_rtv();
     };
 
+
+    enum DX12_Resource_Type : int8_t {
+        DX12_RESOURCE_TYPE_INVALID = -1,
+        DX12_RESOURCE_TYPE_BUFFER,
+        DX12_RESOURCE_TYPE_TEXTURE_2D,
+    };
+
+    struct DX12_Resource_Desc_Buffer {
+        uint64_t size;
+    };
+
+    struct DX12_Resource_Desc_Texture {
+        DXGI_FORMAT format;
+        u32 width;
+        u32 height;
+        u16 mip_levels;
+        u16 depth;
+        u32 num_samples;
+    };
+
+    struct DX12_Resource_Desc {
+        DX12_Resource_Type      type;
+
+        D3D12_HEAP_TYPE         heap_type         = D3D12_HEAP_TYPE_DEFAULT;
+        D3D12_CPU_PAGE_PROPERTY cpu_page_property = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        D3D12_HEAP_FLAGS        heap_flags        = D3D12_HEAP_FLAG_NONE;
+        D3D12_RESOURCE_FLAGS    resource_flags    = D3D12_RESOURCE_FLAG_NONE;
+
+        union {
+            DX12_Resource_Desc_Buffer  buffer;
+            DX12_Resource_Desc_Texture texture;
+        };
+    };
+
+    struct DX12_Resource {
+        DX12_Resource_Desc desc;
+        ID3D12Resource*    native_resource;
+    };
+
+
+
     ENGINE_API DX12_Device* dx12_create_device();
     ENGINE_API void dx12_destroy_device(DX12_Device* device);
 
@@ -100,6 +137,9 @@ namespace Engine
 
     ENGINE_API void dx12_execute_command_list(DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list);
 
-    ENGINE_API void dx12_fence_signal(DX12_Command_Queue* cmd_queue, DX12_Fence* fence);
-    ENGINE_API void dx12_fence_wait(DX12_Fence* fence);
+    ENGINE_API void dx12_signal_fence(DX12_Command_Queue* cmd_queue, DX12_Fence* fence);
+    ENGINE_API void dx12_wait_fence(DX12_Fence* fence);
+
+    ENGINE_API DX12_Resource* dx12_alloc_resource(DX12_Device* device, DX12_Resource_Desc desc);
+    ENGINE_API void dx12_dealloc_resource(DX12_Resource* resource);
 }
