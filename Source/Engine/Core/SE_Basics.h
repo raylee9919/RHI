@@ -103,20 +103,19 @@ FORCE_INLINE void SafeReleaseCOM(T** ppCOM)
 namespace Engine
 {
     template <typename T>
-    FORCE_INLINE T AlignUp(T x, T align) 
+    FORCE_INLINE T align_up(T x, T align) 
     {
         return (x + align - 1) & ~(align - 1);
     }
 
     template <typename T>
-    FORCE_INLINE T AlignDown(T x, T align) 
+    FORCE_INLINE T align_down(T x, T align) 
     {
         return x & ~(align - 1);
     }
 
-    FORCE_INLINE void MemorySet(void* dst, int value, size_t size)
-    {
-        memset(dst, value, size);
+    FORCE_INLINE int tzcnt(unsigned int x) {
+        return std::countr_zero(x);
     }
 
     // Returns first encountered set bit's index (zero-indexed).

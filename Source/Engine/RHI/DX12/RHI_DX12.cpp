@@ -367,10 +367,10 @@ namespace Engine
             if (device && descriptor_heap)
             {
                 u32 free_list_node_size_in_bits = sizeof(descriptor_heap->free_list[0]) << 3;
-                u32 num_alloc = AlignUp(max_descriptors, free_list_node_size_in_bits); // = num_descriptors_to_alloc
+                u32 num_alloc = align_up(max_descriptors, free_list_node_size_in_bits); // = num_descriptors_to_alloc
                 u32 num_free_list_nodes = num_alloc / free_list_node_size_in_bits;
                 descriptor_heap->free_list = new u32[num_free_list_nodes];
-                MemorySet(descriptor_heap->free_list, 0xff, sizeof(descriptor_heap->free_list[0]) * num_free_list_nodes);
+                memset(descriptor_heap->free_list, 0xff, sizeof(descriptor_heap->free_list[0]) * num_free_list_nodes);
 
                 const bool is_shader_visible = kind == RHI_DESCRIPTOR_KIND_CBV_SRV_UAV || kind == RHI_DESCRIPTOR_KIND_SAMPLER;
 

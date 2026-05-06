@@ -116,13 +116,13 @@ namespace Engine
         // Cleanups
         dx12_safe_release_and_set_to_null(&device_0);
         dx12_safe_release_and_set_to_null(&adapter);
-        dx12_safe_release_and_set_to_null(&dxgi_factory_6);
         dx12_safe_release_and_set_to_null(&dxgi_info_queue);
         dx12_safe_release_and_set_to_null(&debug_interface_5);
         dx12_safe_release_and_set_to_null(&debug_interface);
 
         auto* result = new DX12_Device;
         result->native_device = device;
+        result->factory = dxgi_factory_6;
 
         return result;
     }
@@ -131,6 +131,73 @@ namespace Engine
     {
         if (device) {
             if (device->native_device) { device->native_device->Release(); }
+            if (device->factory)       { device->factory->Release(); }
+        }
+    }
+
+    ENGINE_API DX12_Swap_Chain* dx12_create_swap_chain(DX12_Device* device, DX12_Command_Queue* cmd_queue, DX12_Descriptor_Heap* rtv_heap, HWND hwnd, u32 width, u32 height, u32 num_frames)
+    {
+        IDXGISwapChain1* swap_chain_1 = nullptr;
+        IDXGISwapChain3* swap_chain_3 = nullptr;
+
+        DXGI_SWAP_CHAIN_DESC1 swap_chain_desc = {
+            .Width  = width,
+            .Height = height,
+            .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+            .Stereo = FALSE, // Probably for VR
+            .SampleDesc = {
+                .Count   = 1, // @Temporary: Has to do with MSAA?
+                .Quality = 0
+            },
+            .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
+            .BufferCount = num_frames,
+            .Scaling     = DXGI_SCALING_STRETCH,
+            .SwapEffect  = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+            .AlphaMode   = DXGI_ALPHA_MODE_UNSPECIFIED,
+            .Flags       = 0, // @Temporary: Tearing?
+        };
+
+        // @Note: You can optionally set 4th parameter pFullscreenDesc to create a 
+        // full-screen swap chain. If set to null, a windowed swap chain will be created.
+        if (FAILED(device->factory->CreateSwapChainForHwnd(cmd_queue->native_cmd_queue, hwnd, &swap_chain_desc, nullptr, nullptr, &swap_chain_1))) {
+            return nullptr;
+        }
+        if (FAILED(swap_chain_1->QueryInterface(IID_PPV_ARGS(&swap_chain_3)))) {
+            return nullptr;
+        }
+
+        DX12_Swap_Chain* result = new DX12_Swap_Chain;
+        {
+            result->native_swap_chain   = swap_chain_3;
+            result->num_frames          = num_frames;
+            result->current_frame_index = swap_chain_3->GetCurrentBackBufferIndex();
+
+            result->resources = new ID3D12Resource*[3];
+            result->rtvs = new DX12_Descriptor[3];
+        }
+
+        for (u32 i = 0; i < num_frames; ++i) {
+            swap_chain_3->GetBuffer(i, IID_PPV_ARGS(&result->resources[i]));
+            auto rtv = dx12_alloc_descriptor(rtv_heap);
+            result->rtvs[i] = rtv;
+            device->native_device->CreateRenderTargetView(result->resources[i], nullptr, rtv.cpu_handle);
+        }
+
+        dx12_safe_release_and_set_to_null(&swap_chain_1);
+
+        return result;
+    }
+
+    ENGINE_API void dx12_destroy_swap_chain(DX12_Swap_Chain* swap_chain)
+    {
+        if (swap_chain) {
+            if (swap_chain->native_swap_chain) { swap_chain->native_swap_chain->Release(); }
+            for (u32 i = 0; i < swap_chain->num_frames; ++i) {
+                swap_chain->resources[i]->Release();
+                DX12_release_descriptor(swap_chain->rtvs[i]);
+            }
+            delete [] swap_chain->resources;
+            delete [] swap_chain->rtvs;
         }
     }
 
@@ -235,12 +302,22 @@ namespace Engine
             gpu_handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(heap->GetGPUDescriptorHandleForHeapStart());
         }
 
+        // Make a free list.
+        u32 aligned_count = align_up(max_descriptors, 64u);
+        u32 num_nodes = aligned_count / 64u;
+        u64* free_list = new u64[num_nodes];
+        memset(free_list, 0xff, sizeof(u64) * num_nodes);
+
         DX12_Descriptor_Heap* result = new DX12_Descriptor_Heap;
-        result->native_heap = heap;
-        result->cpu_handle  = CD3DX12_CPU_DESCRIPTOR_HANDLE(heap->GetCPUDescriptorHandleForHeapStart());
-        result->gpu_handle  = gpu_handle;
-        result->max         = max_descriptors;
-        result->num         = 0;
+        result->native_heap     = heap;
+        result->type            = type;
+        result->descriptor_size = device->native_device->GetDescriptorHandleIncrementSize(type);
+        result->cpu_handle      = CD3DX12_CPU_DESCRIPTOR_HANDLE(heap->GetCPUDescriptorHandleForHeapStart());
+        result->gpu_handle      = gpu_handle;
+        result->max             = max_descriptors;
+        result->num             = 0;
+        result->free_list       = free_list;
+        result->num_nodes       = num_nodes;
 
         return result;
     }
@@ -249,7 +326,119 @@ namespace Engine
     {
         if (heap) {
             if (heap->native_heap) { heap->native_heap->Release(); }
+            if (heap->free_list)   { delete [] heap->free_list;    }
         }
     }
 
+    ENGINE_API DX12_Descriptor dx12_alloc_descriptor(DX12_Descriptor_Heap* heap)
+    {
+        int index = -1;
+        for (u32 ni = 0; ni < heap->num_nodes; ++ni) {
+            u64 bits = heap->free_list[ni];
+            int b = tzcnt(bits);
+            if (b < 64) {
+                bits ^= (1ull << b);
+                index = ni * 64 + b;
+                heap->free_list[ni] = bits;
+                break;
+            }
+        }
+
+        // @Todo: Should grow?
+        assert(index != -1);
+
+        int offset = index * heap->descriptor_size;
+
+        DX12_Descriptor result = {};
+        result.cpu_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(heap->cpu_handle, offset);
+
+        auto type = heap->type;
+
+        if (type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV || type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER) {
+            result.gpu_handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(heap->gpu_handle, offset);
+        } else if (type != D3D12_DESCRIPTOR_HEAP_TYPE_RTV && type != D3D12_DESCRIPTOR_HEAP_TYPE_DSV) {
+            assert(0);
+        }
+
+        result.index = index;
+        result.my_heap = heap;
+        
+        return result;
+    }
+
+    ENGINE_API void DX12_release_descriptor(const DX12_Descriptor& descriptor)
+    {
+        u64 a = descriptor.index / 64;
+        u64 b = descriptor.index % 64;
+        u64* bits = descriptor.my_heap->free_list + a;
+        *bits = ( *bits | (1ull << b) );
+    }
+
+    void DX12_Command_List::begin()
+    {
+        native_cmd_allocator->Reset();
+        native_cmd_list->Reset(native_cmd_allocator, nullptr);
+    }
+
+    void DX12_Command_List::end()
+    {
+        native_cmd_list->Close();
+    }
+
+    void DX12_Command_List::clear_rtv(DX12_Descriptor* descriptor, float r, float g, float b, float a)
+    {
+        FLOAT color[] = { r, g, b, a };
+        native_cmd_list->ClearRenderTargetView(descriptor->cpu_handle, color, 0, nullptr);
+    }
+
+    void DX12_Command_List::transition_barrier(ID3D12Resource* resource, uint32_t subresource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
+    {
+        D3D12_RESOURCE_BARRIER barrier = {
+            .Type  = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition = {
+                .pResource   = resource,
+                .Subresource = subresource,
+                .StateBefore = before,
+                .StateAfter  = after,
+            }
+        };
+        native_cmd_list->ResourceBarrier(1, &barrier);
+    }
+
+    ENGINE_API void dx12_execute_command_list(DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list)
+    {
+        ID3D12CommandList* lists[] = { cmd_list->native_cmd_list };
+        cmd_queue->native_cmd_queue->ExecuteCommandLists(1, lists);
+    }
+
+    ENGINE_API void dx12_fence_signal(DX12_Command_Queue* cmd_queue, DX12_Fence* fence)
+    {
+        cmd_queue->native_cmd_queue->Signal(fence->native_fence, ++fence->value);
+    }
+
+    ENGINE_API void dx12_fence_wait(DX12_Fence* fence)
+    {
+        if (fence->value > fence->native_fence->GetCompletedValue()) {
+            fence->native_fence->SetEventOnCompletion(fence->value, fence->event);
+            WaitForSingleObject(fence->event, INFINITE);
+        }
+    }
+
+    void DX12_Swap_Chain::present()
+    {
+        UINT sync_interval = 0;
+        native_swap_chain->Present(sync_interval, 0); // @Temporary: flags?
+        current_frame_index = native_swap_chain->GetCurrentBackBufferIndex();
+    }
+
+    ID3D12Resource* DX12_Swap_Chain::get_current_resource()
+    {
+        return resources[current_frame_index];
+    }
+
+    DX12_Descriptor* DX12_Swap_Chain::get_current_rtv()
+    {
+        return rtvs + current_frame_index;
+    }
 }
