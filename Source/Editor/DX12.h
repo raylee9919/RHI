@@ -43,17 +43,60 @@ namespace Engine
         DX12_Descriptor_Heap*         my_heap;
         CD3DX12_CPU_DESCRIPTOR_HANDLE cpu_handle;
         CD3DX12_GPU_DESCRIPTOR_HANDLE gpu_handle;
-        int                           index;
+        u32                           index;
+    };
+
+    struct DX12_Graphics_Pipeline_Desc {
+        ID3D12RootSignature*          root_signature;
+
+        u32                           num_input_elements;
+        D3D12_INPUT_ELEMENT_DESC*     input_elements;
+
+        D3D12_PRIMITIVE_TOPOLOGY_TYPE topology;
+
+        D3D12_CULL_MODE               cull_mode;
+
+        bool                          depth_enabled;
+        u32                           num_render_targets;
+        DXGI_FORMAT                   rtv_formats[8];
+        DXGI_FORMAT                   dsv_format;
+
+        void*                         vs_bytecode;
+        u64                           vs_length;
+
+        void*                         ps_bytecode;
+        u64                           ps_length;
+    };
+
+    struct DX12_Pipeline_State {
+        DX12_Graphics_Pipeline_Desc desc;
+        ID3D12PipelineState* pso = nullptr;
+
+        FORCE_INLINE void release() {
+            if (pso) { pso->Release(); pso = nullptr; }
+        }
     };
 
     struct ENGINE_API DX12_Command_List {
         ID3D12GraphicsCommandList7* native_cmd_list;
         ID3D12CommandAllocator*     native_cmd_allocator;
 
+
         void begin();
         void end();
         void clear_rtv(DX12_Descriptor* descriptor, float r, float g, float b, float a);
+        void clear_dsv(DX12_Descriptor* descriptor, float depth, int top_left_x, int top_left_y, int width, int height);
         void transition_barrier(ID3D12Resource* resource, uint32_t subresource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
+        void set_pipeline_state(DX12_Pipeline_State* state);
+        void set_resource_and_sampler_heap(DX12_Descriptor_Heap* resource_heap, DX12_Descriptor_Heap* sampler_heap);
+        void set_graphics_root_signature(ID3D12RootSignature* root_signature);
+        void set_graphics_root_constants(u32 root_parameter_index, u32 count, void* data);
+        void set_viewport(int top_left_x, int top_left_y, int width, int height);
+        void set_scissor(int top_left_x, int top_left_y, int width, int height);
+        void set_topology(D3D12_PRIMITIVE_TOPOLOGY topology);
+        void set_render_target(u32 num_rtvs, DX12_Descriptor** rtvs, DX12_Descriptor* dsv);
+
+        void draw(u32 num_vertices, u32 num_instances, u32 begin_vertex = 0, u32 begin_instance = 0);
     };
 
     struct DX12_Command_Queue {
@@ -101,6 +144,10 @@ namespace Engine
         D3D12_HEAP_FLAGS        heap_flags        = D3D12_HEAP_FLAG_NONE;
         D3D12_RESOURCE_FLAGS    resource_flags    = D3D12_RESOURCE_FLAG_NONE;
 
+        // Ignored unless one of resource_flags is RTV or DSV.
+        bool                    do_clear = false;
+        D3D12_CLEAR_VALUE       clear_value = {};
+
         union {
             DX12_Resource_Desc_Buffer  buffer;
             DX12_Resource_Desc_Texture texture;
@@ -111,6 +158,8 @@ namespace Engine
         DX12_Resource_Desc desc;
         ID3D12Resource*    native_resource;
     };
+
+
 
 
 
@@ -142,4 +191,10 @@ namespace Engine
 
     ENGINE_API DX12_Resource* dx12_alloc_resource(DX12_Device* device, DX12_Resource_Desc desc);
     ENGINE_API void dx12_dealloc_resource(DX12_Resource* resource);
+
+    ENGINE_API ID3D12RootSignature* dx12_create_bindless_root_signature(DX12_Device* device);
+
+    ENGINE_API DX12_Pipeline_State dx12_create_graphics_pipeline_state(DX12_Device* device, const DX12_Graphics_Pipeline_Desc& desc);
+
+    ENGINE_API D3D12_PRIMITIVE_TOPOLOGY dx12_to_primitive_topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
 }

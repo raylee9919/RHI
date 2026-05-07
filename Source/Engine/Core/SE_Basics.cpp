@@ -2,6 +2,8 @@
 
 #include "SE_Basics.h"
 
+#include <fstream>
+
 #if _MSC_VER
 #  include <intrin.h>
 #else
@@ -11,20 +13,24 @@
 namespace Engine
 {
 
-    ENGINE_API uint32_t BitScanFromLSB(uint32_t x)
+    ENGINE_API u64 read_entire_file(const String& path, void* buffer)
     {
-        // @Todo: Since I'm compiling in C++20, I might want to just use 'std::countr_zero()'
-        //
-#ifdef _MSC_VER
-        uint32_t index;
-        if (BitScanForward((unsigned long*)&index, (unsigned int)x) == 0)
-        {
-            index = 32;
+        std::ifstream file(path.c_str(), std::ios::binary | std::ios::ate);
+
+        if (!file.is_open()) {
+            return 0;
         }
-        return index;
-#else
-#  error Undefined compiler.
-#endif
+
+        uint64_t size = (uint64_t)file.tellg();
+
+        if (!buffer) {
+            return size;
+        }
+
+        file.seekg(0);
+        file.read(static_cast<char*>(buffer), size);
+
+        return (uint64_t)file.gcount();
     }
 
 

@@ -2,7 +2,6 @@
 
 includes("OS")
 includes("Core")
-includes("IO")
 includes("File")
 includes("Window")
 includes("Input")
@@ -19,4 +18,4 @@ target("Engine")
     set_group("Engine")
 
     add_includedirs(".", { public = true })
-    add_deps("OS", "Core", "IO", "File", "Window", "Input", "RHI", "GFX", "Renderer", "Shader", "Asset")
+    add_deps("OS", "Core", "File", "Window", "Input", "RHI", "GFX", "Renderer", "Shader", "Asset")

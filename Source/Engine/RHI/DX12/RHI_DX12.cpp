@@ -467,7 +467,7 @@ namespace Engine
                     continue;
                 }
 
-                u32 bit = BitScanFromLSB(node);
+                u32 bit = tzcnt(node);
                 if (bit < 32) // found
                 {
                     node ^= (1 << bit);

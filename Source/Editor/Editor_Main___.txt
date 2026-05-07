@@ -166,7 +166,7 @@ int ENGINE_MAIN(int argc, const char** argv)
     //
     Pipeline_State* pipeline_state = new Pipeline_State;
     {
-        String path = (asset_dir / "Shader/HLSL/Triangle.hlsl").string();
+        String path = (asset_dir / "Shader/HLSL/Simple.shader").string();
         auto intermediate_pso = dx12CreateIntermediatePipelineState(compiler, path, is_debug);
         InitPipelineState(device, &intermediate_pso, pipeline_state);
     }

@@ -6,6 +6,7 @@
 #include <stack>
 #include <type_traits>
 #include <bit>
+#include <string>
 
 typedef int8_t          int8;
 typedef int16_t        int16;
@@ -118,9 +119,8 @@ namespace Engine
         return std::countr_zero(x);
     }
 
-    // Returns first encountered set bit's index (zero-indexed).
-    // If not found, return 32.
-    ENGINE_API uint32_t BitScanFromLSB(uint32_t x);
+    using String = std::string;
+    ENGINE_API u64 read_entire_file(const String& path, void* buffer);
 
 
     static const f32 F32_MAX = 3.402823e+38f;

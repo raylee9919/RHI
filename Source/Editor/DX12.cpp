@@ -360,6 +360,8 @@ namespace Engine
             assert(0);
         }
 
+        assert(index != -1);
+
         result.index = index;
         result.my_heap = heap;
         
@@ -391,6 +393,17 @@ namespace Engine
         native_cmd_list->ClearRenderTargetView(descriptor->cpu_handle, color, 0, nullptr);
     }
 
+    void DX12_Command_List::clear_dsv(DX12_Descriptor* descriptor, float depth, int top_left_x, int top_left_y, int width, int height)
+    {
+        D3D12_RECT rect = {
+            .left   = top_left_x,
+            .top    = top_left_y,
+            .right  = top_left_x + width,
+            .bottom = top_left_y + height
+        };
+        native_cmd_list->ClearDepthStencilView(descriptor->cpu_handle, D3D12_CLEAR_FLAG_DEPTH, depth, 0u, 1, &rect);
+    }
+
     void DX12_Command_List::transition_barrier(ID3D12Resource* resource, uint32_t subresource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
     {
         D3D12_RESOURCE_BARRIER barrier = {
@@ -404,6 +417,74 @@ namespace Engine
             }
         };
         native_cmd_list->ResourceBarrier(1, &barrier);
+    }
+
+    void DX12_Command_List::set_pipeline_state(DX12_Pipeline_State* state)
+    {
+        native_cmd_list->SetPipelineState(state->pso);
+    }
+
+    void DX12_Command_List::set_resource_and_sampler_heap(DX12_Descriptor_Heap* resource_heap, DX12_Descriptor_Heap* sampler_heap)
+    {
+        assert(resource_heap->type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        assert(sampler_heap->type  == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+
+        ID3D12DescriptorHeap *heaps[] = {
+            resource_heap->native_heap,
+            sampler_heap->native_heap,
+        };
+        native_cmd_list->SetDescriptorHeaps(_countof(heaps), heaps);
+    }
+
+    void DX12_Command_List::set_graphics_root_signature(ID3D12RootSignature* root_signature)
+    {
+        native_cmd_list->SetGraphicsRootSignature(root_signature);
+    }
+
+    void DX12_Command_List::set_graphics_root_constants(u32 root_parameter_index, u32 count, void* data)
+    {
+        native_cmd_list->SetGraphicsRoot32BitConstants(root_parameter_index, count, data, 0);
+    }
+
+    void DX12_Command_List::set_viewport(int top_left_x, int top_left_y, int width, int height) {
+        D3D12_VIEWPORT viewport = {
+            .TopLeftX = (FLOAT)top_left_x,
+            .TopLeftY = (FLOAT)top_left_y,
+            .Width    = (FLOAT)width,
+            .Height   = (FLOAT)height,
+            .MinDepth = D3D12_MIN_DEPTH,
+            .MaxDepth = D3D12_MAX_DEPTH
+        };
+        native_cmd_list->RSSetViewports(1, &viewport);
+    }
+
+    void DX12_Command_List::set_scissor(int top_left_x, int top_left_y, int width, int height) {
+        D3D12_RECT rect = {
+            .left = top_left_x,
+            .top  = top_left_y,
+            .right = top_left_x + width,
+            .bottom = top_left_y + height,
+        };
+        native_cmd_list->RSSetScissorRects(1, &rect);
+    }
+
+    void DX12_Command_List::set_topology(D3D12_PRIMITIVE_TOPOLOGY topology)
+    {
+        native_cmd_list->IASetPrimitiveTopology(topology);
+    }
+
+    void DX12_Command_List::set_render_target(u32 num_rtvs, DX12_Descriptor** rtvs, DX12_Descriptor* dsv)
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[32];
+        assert(num_rtvs < _countof(rtv_handles));
+        for (u32 i = 0; i < num_rtvs; ++i) { rtv_handles[i] = rtvs[i]->cpu_handle; }
+        D3D12_CPU_DESCRIPTOR_HANDLE* dsv_handle = dsv ? &dsv->cpu_handle : nullptr;
+        native_cmd_list->OMSetRenderTargets(num_rtvs, rtv_handles, false, dsv_handle);
+    }
+
+    void DX12_Command_List::draw(u32 num_vertices, u32 num_instances, u32 begin_vertex, u32 begin_instance)
+    {
+        native_cmd_list->DrawInstanced(num_vertices, num_instances, begin_vertex, begin_instance);
     }
 
     ENGINE_API void dx12_execute_command_list(DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list)
@@ -447,8 +528,8 @@ namespace Engine
         DX12_Resource* result = nullptr;
         ID3D12Resource* resource = nullptr;
         D3D12_HEAP_PROPERTIES heap_prop = {
-            .Type                 = D3D12_HEAP_TYPE_DEFAULT,
-            .CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+            .Type                 = desc.heap_type,
+            .CPUPageProperty      = desc.cpu_page_property,
             .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
             .CreationNodeMask     = 1,
             .VisibleNodeMask      = 1
@@ -456,6 +537,10 @@ namespace Engine
         D3D12_RESOURCE_STATES init_state = D3D12_RESOURCE_STATE_COMMON;
         D3D12_RESOURCE_DESC res_desc;
         bool ok = false;
+        bool should_clear = ((desc.resource_flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) ||
+                             (desc.resource_flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)) && desc.do_clear;
+        D3D12_CLEAR_VALUE* clear_value = should_clear ? &desc.clear_value : nullptr;
+
 
         if (desc.type == DX12_RESOURCE_TYPE_BUFFER) {
             auto buffer = desc.buffer;
@@ -475,7 +560,7 @@ namespace Engine
                 .Flags            = desc.resource_flags,
             };
             
-            if (SUCCEEDED(device->native_device->CreateCommittedResource(&heap_prop, desc.heap_flags, &res_desc, init_state, nullptr, IID_PPV_ARGS(&resource)))) {
+            if (SUCCEEDED(device->native_device->CreateCommittedResource(&heap_prop, desc.heap_flags, &res_desc, init_state, clear_value, IID_PPV_ARGS(&resource)))) {
                 ok = true;
             }
 
@@ -497,7 +582,7 @@ namespace Engine
                 .Flags            = desc.resource_flags,
             };
 
-            if (SUCCEEDED(device->native_device->CreateCommittedResource(&heap_prop, desc.heap_flags, &res_desc, init_state, nullptr, IID_PPV_ARGS(&resource)))) {
+            if (SUCCEEDED(device->native_device->CreateCommittedResource(&heap_prop, desc.heap_flags, &res_desc, init_state, clear_value, IID_PPV_ARGS(&resource)))) {
                 ok = true;
             }
         } else {
@@ -518,5 +603,125 @@ namespace Engine
         if (resource) {
             if (resource->native_resource) { resource->native_resource->Release(); }
         }
+    }
+
+    ENGINE_API ID3D12RootSignature* dx12_create_bindless_root_signature(DX12_Device* device)
+    {
+        ID3D12RootSignature* result = nullptr;
+
+        D3D12_ROOT_PARAMETER1 root_params[1] = {};
+        root_params[0] = {
+            .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+            .Constants = {
+                .ShaderRegister = 0,
+                .RegisterSpace  = 0,
+                .Num32BitValues = 36 // @Todo: wha's the big enough value
+            },
+            .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+        };
+
+        D3D12_VERSIONED_ROOT_SIGNATURE_DESC root_signature_desc = {
+            .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+            .Desc_1_1 = {
+                .NumParameters     = _countof(root_params),
+                .pParameters       = root_params,
+                .NumStaticSamplers = 0,
+                .pStaticSamplers   = nullptr,
+                .Flags = (D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | 
+                          D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED | 
+                          D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED)
+            }
+        };
+
+        ID3DBlob* root_signature_blob = nullptr;
+        ID3DBlob* error_blob = nullptr;
+
+        if (FAILED(D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, &error_blob))) {
+
+        }
+
+        if (FAILED(device->native_device->CreateRootSignature(0, root_signature_blob->GetBufferPointer(), root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&result)))) {
+
+        }
+
+        // Cleanup
+        if (root_signature_blob) { root_signature_blob->Release(); }
+        if (error_blob)          { error_blob->Release(); }
+
+        return result;
+    }
+
+    ENGINE_API DX12_Pipeline_State dx12_create_graphics_pipeline_state(DX12_Device* device, const DX12_Graphics_Pipeline_Desc& desc)
+    {
+        DX12_Pipeline_State result = {};
+
+        ID3D12PipelineState* pso = nullptr;
+
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = {
+            .pRootSignature = desc.root_signature,
+
+            .VS = {
+                .pShaderBytecode = desc.vs_bytecode,
+                .BytecodeLength  = desc.vs_length
+            },
+            .PS = {
+                .pShaderBytecode = desc.ps_bytecode,
+                .BytecodeLength  = desc.ps_length
+            },
+
+            .BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT), // @Temporary
+            .SampleMask = 0xff,
+            .RasterizerState = {
+                .FillMode              = D3D12_FILL_MODE_SOLID,
+                .CullMode              = desc.cull_mode,
+                .FrontCounterClockwise = TRUE,
+                .DepthBias             = 0,
+                .DepthBiasClamp        = 0.f, 
+                .SlopeScaledDepthBias  = 0.f,
+                .DepthClipEnable       = TRUE,
+                .MultisampleEnable     = FALSE,
+                .AntialiasedLineEnable = FALSE,
+                .ForcedSampleCount     = 0,
+                .ConservativeRaster    = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
+            },
+            .DepthStencilState = {
+                .DepthEnable    = desc.depth_enabled,
+                .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL,
+                .DepthFunc      = D3D12_COMPARISON_FUNC_LESS,
+
+                .StencilEnable  = FALSE, 
+                //UINT8 StencilReadMask;
+                //UINT8 StencilWriteMask;
+                //D3D12_DEPTH_STENCILOP_DESC FrontFace;
+                //D3D12_DEPTH_STENCILOP_DESC BackFace;
+            },
+            .InputLayout = {
+                .pInputElementDescs = desc.input_elements,
+                .NumElements        = desc.num_input_elements
+            },
+            .PrimitiveTopologyType = desc.topology,
+
+            .SampleDesc = {
+                .Count = 1,
+                .Quality = 0
+            },
+
+            // .CachedPSO;
+
+            .Flags = D3D12_PIPELINE_STATE_FLAG_NONE // @Study: D3D12_PIPELINE_STATE_FLAG_TOOL_DEBUG
+        };
+
+        pso_desc.NumRenderTargets = desc.num_render_targets;
+        pso_desc.DSVFormat        = desc.dsv_format;
+        memcpy(pso_desc.RTVFormats, desc.rtv_formats, sizeof(desc.rtv_formats));
+
+        if (SUCCEEDED(device->native_device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&pso)))) {
+
+        }
+
+        result.pso = pso;
+        result.desc = desc;
+
+        return result;
     }
 }

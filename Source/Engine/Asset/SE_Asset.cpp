@@ -4,7 +4,6 @@
 
 #include "Core/SE_Log.h"
 
-#include "IO/IO.h"
 #include "File/FileSystem.h"
 
 #include "ThirdParty/cgltf/Include/cgltf.h"
