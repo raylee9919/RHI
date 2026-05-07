@@ -65,6 +65,8 @@ Scope_Exit<F> scope_exit_make(F f) {
 
 #define ARRAY_COUNT(arr) (sizeof(arr)/sizeof(arr[0]))
 
+#define count_of(arr) (sizeof(arr)/sizeof(arr[0]))
+
 #ifdef _MSC_VER
 #  define FORCE_INLINE __forceinline
 #else

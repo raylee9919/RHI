@@ -35,11 +35,10 @@ int main()
     auto* res_heap     = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 512);
     auto* sampler_heap = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,      32);
 
-    HWND hwnd = (HWND)window->get_platform_window();
-    u32 tex_width = 1920;
+    u32 tex_width  = 1920;
     u32 tex_height = 1080;
     u32 num_frames = 3;
-    auto* swap_chain = dx12_create_swap_chain(device, cmd_queue, rtv_heap, hwnd, tex_width, tex_height, num_frames);
+    auto* swap_chain = dx12_create_swap_chain(device, cmd_queue, rtv_heap, (HWND)window->get_platform_window(), tex_width, tex_height, num_frames);
 
     DXGI_FORMAT rtv_format = DXGI_FORMAT_R8G8B8A8_UNORM;
     DXGI_FORMAT dsv_format = DXGI_FORMAT_D24_UNORM_S8_UINT;
@@ -60,7 +59,6 @@ int main()
 
     auto* bindless_root_signature = dx12_create_bindless_root_signature(device);
 
-    // init compiler and compile shader.
     auto* pso = new DX12_Pipeline_State;
     {
         // Reflection
@@ -114,81 +112,47 @@ int main()
         delete [] source;
     }
 
+
+    // Create DSV
     auto dsv = dx12_alloc_descriptor(dsv_heap);
-    D3D12_DEPTH_STENCIL_VIEW_DESC dsv_desc = {
-        .Format = dsv_format,
-        .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D,
-        .Flags = D3D12_DSV_FLAG_NONE,
-        .Texture2D = {
-            .MipSlice = 0
-        }
+    dx12_create_dsv(device, depth_texture_resource, &dsv, dsv_format);
+
+    // Create vertex buffer
+    vec3 vertices[] = {
+        vec3(-0.5f, -0.5f, 0.0f),
+        vec3( 0.5f, -0.5f, 0.0f),
+        vec3(-0.5f,  0.5f, 0.0f),
+        vec3( 0.5f,  0.5f, 0.0f),
     };
-    device->native_device->CreateDepthStencilView(depth_texture_resource->native_resource, &dsv_desc, dsv.cpu_handle);
+    u64 vertices_size = sizeof(vertices);
+    const u32 num_vertices = count_of(vertices);
+    const u32 vert_stride  = sizeof(vec3);
 
+    auto* vertex_buffer = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .heap_type = D3D12_HEAP_TYPE_DEFAULT, .buffer = { .size = vertices_size } });
+    dx12_upload_buffer(device, cmd_queue, cmd_list, fence, vertex_buffer, vertices, vertices_size);
 
-    DX12_Resource* vertex_buffer = nullptr;
-    {
-        vec3 vertices[3] = {
-            vec3(-0.5f, -0.5f, 0.0f),
-            vec3( 0.5f, -0.5f, 0.0f),
-            vec3( 0.0f,  0.5f, 0.0f),
-        };
-        u64 size = sizeof(vertices);
-
-        vertex_buffer = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .heap_type = D3D12_HEAP_TYPE_DEFAULT, .buffer = { .size = size } });
-
-        const u32 subresource        = 0;
-        const u32 num_subresource    = 1;
-        const u64 upload_buffer_size = GetRequiredIntermediateSize(vertex_buffer->native_resource, subresource, num_subresource);
-        DX12_Resource* upload_buffer = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .heap_type = D3D12_HEAP_TYPE_UPLOAD, .buffer = { .size = upload_buffer_size } });
-        
-        const D3D12_RANGE read_range = { 0, 0 }; // No read
-        void* ptr;
-        upload_buffer->native_resource->Map(0, &read_range, &ptr);
-        memcpy(ptr, vertices, size);
-        upload_buffer->native_resource->Unmap(0, nullptr);
-
-        cmd_list->begin();
-        {
-            cmd_list->transition_barrier(vertex_buffer->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
-            cmd_list->transition_barrier(upload_buffer->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
-
-            cmd_list->native_cmd_list->CopyBufferRegion(vertex_buffer->native_resource, 0, upload_buffer->native_resource, 0, size);
-
-            cmd_list->transition_barrier(vertex_buffer->native_resource, 0, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
-            cmd_list->transition_barrier(upload_buffer->native_resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
-        }
-        cmd_list->end();
-
-        dx12_execute_command_list(cmd_queue, cmd_list);
-
-        dx12_signal_fence(cmd_queue, fence);
-        dx12_wait_fence(fence);
-
-        dx12_dealloc_resource(upload_buffer);
-    }
-
-
-    const u32 stride = sizeof(vec3);
-    const u32 count  = 3;
     DX12_Descriptor vertex_buffer_descriptor = dx12_alloc_descriptor(res_heap);
-    D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {
-        .Format                  = DXGI_FORMAT_UNKNOWN,
-        .ViewDimension           = D3D12_SRV_DIMENSION_BUFFER,
-        .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-        .Buffer = {
-            .FirstElement         = 0,
-            .NumElements          = count,
-            .StructureByteStride = stride,
-            .Flags                = D3D12_BUFFER_SRV_FLAG_NONE
-        }
+    dx12_create_srv(device, vertex_buffer, &vertex_buffer_descriptor, num_vertices, vert_stride);
+
+    // Create index buffer
+    u32 indices[] = {
+        0, 1, 2,
+        2, 1, 3
     };
-    device->native_device->CreateShaderResourceView(vertex_buffer->native_resource, &srv_desc, vertex_buffer_descriptor.cpu_handle);
+    u32 num_indices = count_of(indices);
+    u64 indices_size = sizeof(indices);
+
+    auto* index_buffer = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .heap_type = D3D12_HEAP_TYPE_DEFAULT, .buffer = { .size = indices_size } });
+    dx12_upload_buffer(device, cmd_queue, cmd_list, fence, index_buffer, indices, indices_size);
+
+
+    // Bindless push constants.
     struct Push_Constant {
         u32 vertex_buffer_id;
     } push_constants = {
         .vertex_buffer_id = vertex_buffer_descriptor.index
     };
+
 
     // Main loop
     //
@@ -215,10 +179,12 @@ int main()
 
             cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+            cmd_list->set_index_buffer(index_buffer);
+
             DX12_Descriptor *rtvs[] = { swap_chain->get_current_rtv() };
             cmd_list->set_render_target(1, rtvs, &dsv);
 
-            cmd_list->draw(3, 1);
+            cmd_list->draw_indexed(num_indices, 1);
 
             cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
             cmd_list->transition_barrier(depth_texture_resource->native_resource, 0, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_COMMON);
@@ -236,6 +202,7 @@ int main()
     // Cleanups
     //
     dx12_dealloc_resource(vertex_buffer);
+    dx12_dealloc_resource(index_buffer);
 
     pso->release();
 

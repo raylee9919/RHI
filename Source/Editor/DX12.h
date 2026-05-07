@@ -95,8 +95,10 @@ namespace Engine
         void set_scissor(int top_left_x, int top_left_y, int width, int height);
         void set_topology(D3D12_PRIMITIVE_TOPOLOGY topology);
         void set_render_target(u32 num_rtvs, DX12_Descriptor** rtvs, DX12_Descriptor* dsv);
+        void set_index_buffer(struct DX12_Resource* resource);
 
         void draw(u32 num_vertices, u32 num_instances, u32 begin_vertex = 0, u32 begin_instance = 0);
+        void draw_indexed(u32 num_indices_per_instance, u32 num_instances, u32 start_index = 0, int base_vertex = 0, u32 start_instance = 0);
     };
 
     struct DX12_Command_Queue {
@@ -197,4 +199,10 @@ namespace Engine
     ENGINE_API DX12_Pipeline_State dx12_create_graphics_pipeline_state(DX12_Device* device, const DX12_Graphics_Pipeline_Desc& desc);
 
     ENGINE_API D3D12_PRIMITIVE_TOPOLOGY dx12_to_primitive_topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
+
+    ENGINE_API void dx12_create_dsv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, DXGI_FORMAT format);
+
+    ENGINE_API void dx12_create_srv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, u32 num_elements, u32 stride_in_bytes);
+
+    ENGINE_API void dx12_upload_buffer(DX12_Device *device, DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list, DX12_Fence* fence, DX12_Resource* resource, void* data, u64 size);
 }

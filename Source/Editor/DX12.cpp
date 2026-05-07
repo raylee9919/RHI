@@ -482,9 +482,25 @@ namespace Engine
         native_cmd_list->OMSetRenderTargets(num_rtvs, rtv_handles, false, dsv_handle);
     }
 
+    void DX12_Command_List::set_index_buffer(DX12_Resource* resource)
+    {
+        DXGI_FORMAT format = DXGI_FORMAT_R32_UINT;
+        D3D12_INDEX_BUFFER_VIEW view = {
+            .BufferLocation = resource->native_resource->GetGPUVirtualAddress(),
+            .SizeInBytes    = static_cast<UINT>(resource->desc.buffer.size),
+            .Format         = format
+        };
+        native_cmd_list->IASetIndexBuffer(&view);
+    }
+
     void DX12_Command_List::draw(u32 num_vertices, u32 num_instances, u32 begin_vertex, u32 begin_instance)
     {
         native_cmd_list->DrawInstanced(num_vertices, num_instances, begin_vertex, begin_instance);
+    }
+
+    void DX12_Command_List::draw_indexed(u32 num_indices_per_instance, u32 num_instances, u32 start_index, int base_vertex, u32 start_instance)
+    {
+        native_cmd_list->DrawIndexedInstanced(num_indices_per_instance, num_instances, start_index, base_vertex, start_instance);
     }
 
     ENGINE_API void dx12_execute_command_list(DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list)
@@ -724,4 +740,69 @@ namespace Engine
 
         return result;
     }
+
+    ENGINE_API void dx12_create_dsv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, DXGI_FORMAT format)
+    {
+        assert(descriptor->my_heap->type == D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+        D3D12_DEPTH_STENCIL_VIEW_DESC dsv_desc = {
+            .Format        = format,
+            .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D,
+            .Flags         = D3D12_DSV_FLAG_NONE,
+            .Texture2D = {
+                .MipSlice = 0
+            }
+        };
+        device->native_device->CreateDepthStencilView(resource->native_resource, &dsv_desc, descriptor->cpu_handle);
+    }
+
+    ENGINE_API void dx12_create_srv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, u32 num_elements, u32 stride_in_bytes)
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {
+            .Format                  = DXGI_FORMAT_UNKNOWN,
+            .ViewDimension           = D3D12_SRV_DIMENSION_BUFFER,
+            .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+            .Buffer = {
+                .FirstElement         = 0,
+                .NumElements          = num_elements,
+                .StructureByteStride  = stride_in_bytes,
+                .Flags                = D3D12_BUFFER_SRV_FLAG_NONE
+            }
+        };
+        device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
+    }
+
+    ENGINE_API void dx12_upload_buffer(DX12_Device *device, DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list, DX12_Fence* fence, DX12_Resource* resource, void* data, u64 size)
+    {
+        const u32 subresource        = 0;
+        const u32 num_subresource    = 1;
+        const u64 upload_buffer_size = GetRequiredIntermediateSize(resource->native_resource, subresource, num_subresource);
+        DX12_Resource* upload_buffer = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .heap_type = D3D12_HEAP_TYPE_UPLOAD, .buffer = { .size = upload_buffer_size } });
+
+        const D3D12_RANGE read_range = { 0, 0 }; // No read
+        void* ptr;
+        upload_buffer->native_resource->Map(0, &read_range, &ptr);
+        memcpy(ptr, data, size);
+        upload_buffer->native_resource->Unmap(0, nullptr);
+
+        cmd_list->begin();
+        {
+            cmd_list->transition_barrier(resource->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+            cmd_list->transition_barrier(upload_buffer->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+            cmd_list->native_cmd_list->CopyBufferRegion(resource->native_resource, 0, upload_buffer->native_resource, 0, size);
+
+            cmd_list->transition_barrier(resource->native_resource, 0, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
+            cmd_list->transition_barrier(upload_buffer->native_resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
+        }
+        cmd_list->end();
+
+        dx12_execute_command_list(cmd_queue, cmd_list);
+
+        dx12_signal_fence(cmd_queue, fence);
+        dx12_wait_fence(fence);
+
+        dx12_dealloc_resource(upload_buffer);
+    }
+
 }
