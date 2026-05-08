@@ -690,7 +690,7 @@ namespace Engine
                 .IndependentBlendEnable = FALSE,
                 .RenderTarget = {
                     { 
-                        .BlendEnable           = TRUE,
+                        .BlendEnable           = FALSE, // V
                         .LogicOpEnable         = FALSE,
 
                         .SrcBlend              = D3D12_BLEND_SRC_ALPHA,
@@ -761,6 +761,13 @@ namespace Engine
         return result;
     }
 
+    ENGINE_API void dx12_create_rtv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, D3D12_RENDER_TARGET_VIEW_DESC desc)
+    {
+        assert(descriptor->my_heap->type == D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+        device->native_device->CreateRenderTargetView(resource->native_resource, &desc, descriptor->cpu_handle);
+    }
+
     ENGINE_API void dx12_create_dsv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, DXGI_FORMAT format)
     {
         assert(descriptor->my_heap->type == D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
@@ -773,6 +780,7 @@ namespace Engine
                 .MipSlice = 0
             }
         };
+
         device->native_device->CreateDepthStencilView(resource->native_resource, &dsv_desc, descriptor->cpu_handle);
     }
 

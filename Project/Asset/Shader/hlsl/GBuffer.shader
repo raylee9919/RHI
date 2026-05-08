@@ -5,23 +5,19 @@
 struct PS_Input {
     float4 sv_position : SV_POSITION;
     float3 position    : POSITION;
-    float3 normal      : NORMAL;
-    float2 uv          : UV;
-    float4 tangent     : TANGENT;
 };
 
+struct PS_Output {
+    float3 position  : SV_TARGET0;
+    uint material_id : SV_TARGET1;
+};
+
+// @Todo: I feel like separating positions from attributes is better.
 struct Vertex {
     float3 position;
     float3 normal;
     float2 uv;
     float4 tangent;
-};
-
-struct Material {
-    uint albedo_id;
-    uint normal_id;
-    uint orm_id;
-    uint emissive_id;
 };
 
 struct Camera {
@@ -35,8 +31,6 @@ struct Push_Constants {
     uint vertex_buffer_id;
     uint material_id;
     uint camera_id;
-    uint linear_sampler_id;
-    uint anisotropic_sampler_id;
 };
 PUSH_CONSTANTS(Push_Constants, push);
 
@@ -53,24 +47,14 @@ PS_Input vs_main(uint vertex_id : SV_VertexID)
 
     result.sv_position = mul(camera.view_proj, float4(vert.position, 1.0));
     result.position    = vert.position;
-    result.normal      = vert.normal;
-    result.uv          = vert.uv;
-    result.tangent     = vert.tangent;
 
     return result;
 }
 
-float4 ps_main(PS_Input input) : SV_TARGET
+PS_Output ps_main(PS_Input input)
 {
-    SamplerState anisotropic_sampler = SamplerDescriptorHeap[push.anisotropic_sampler_id];
-
-    StructuredBuffer<Material> material_buf = ResourceDescriptorHeap[push.material_id];
-    Material material = material_buf[0];
-
-    Texture2D albedo_texture = ResourceDescriptorHeap[material.albedo_id];
-    float4 albedo = albedo_texture.Sample(anisotropic_sampler, input.uv);
-
-    if (albedo.a < 1e-6) { discard; }
-
-    return albedo;
+    PS_Output result;
+    result.position    = float4(input.position, 1.0);
+    result.material_id = push.material_id;
+    return result;
 }
