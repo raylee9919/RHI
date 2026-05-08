@@ -683,7 +683,28 @@ namespace Engine
                 .BytecodeLength  = desc.ps_length
             },
 
-            .BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT), // @Temporary
+            // @Temporary
+            .BlendState = {
+                .AlphaToCoverageEnable  = FALSE,
+                .IndependentBlendEnable = FALSE,
+                .RenderTarget = {
+                    { 
+                        .BlendEnable           = TRUE,
+                        .LogicOpEnable         = FALSE,
+
+                        .SrcBlend              = D3D12_BLEND_SRC_ALPHA,
+                        .DestBlend             = D3D12_BLEND_INV_SRC_ALPHA,
+                        .BlendOp               = D3D12_BLEND_OP_ADD,
+
+                        .SrcBlendAlpha         = D3D12_BLEND_ONE,
+                        .DestBlendAlpha        = D3D12_BLEND_ZERO,
+                        .BlendOpAlpha          = D3D12_BLEND_OP_ADD,
+
+                        .LogicOp               = D3D12_LOGIC_OP_NOOP,
+                        .RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL,
+                    }
+                }
+            },
             .SampleMask = 0xff,
             .RasterizerState = {
                 .FillMode              = D3D12_FILL_MODE_SOLID,
@@ -759,10 +780,12 @@ namespace Engine
         if (resource->desc.type == DX12_RESOURCE_TYPE_BUFFER) {
             auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::StructuredBuffer(num_elements, stride_in_bytes);
             device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
+
         } else if (resource->desc.type == DX12_RESOURCE_TYPE_TEXTURE_2D) {
             auto tex = resource->desc.texture;
             auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::Tex2D(tex.format, tex.mip_levels);
             device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
+
         } else {
             assert(0);
         }
@@ -775,7 +798,7 @@ namespace Engine
         const u64 upload_buffer_size = GetRequiredIntermediateSize(resource->native_resource, subresource, num_subresource);
         DX12_Resource* upload_buffer = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .heap_type = D3D12_HEAP_TYPE_UPLOAD, .buffer = { .size = upload_buffer_size } });
 
-        const D3D12_RANGE read_range = { 0, 0 }; // No read
+        const D3D12_RANGE read_range = { 0, 0 };
         void* ptr;
         upload_buffer->native_resource->Map(0, &read_range, &ptr);
         memcpy(ptr, data, size);

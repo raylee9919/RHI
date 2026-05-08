@@ -35,18 +35,18 @@ struct Push_Constants {
     uint vertex_buffer_id;
     uint material_id;
     uint camera_id;
+    uint linear_sampler_id;
+    uint anisotropic_sampler_id;
 };
 PUSH_CONSTANTS(Push_Constants, push);
 
 
-PS_Input VS_Main(uint vertex_id : SV_VertexID)
+PS_Input vs_main(uint vertex_id : SV_VertexID)
 {
     PS_Input result;
 
     StructuredBuffer <Vertex> vertex_buffer = ResourceDescriptorHeap[push.vertex_buffer_id];
     Vertex vert = vertex_buffer[vertex_id];
-
-    //StructuredBuffer <Material> material = ResourceDescriptorHeap[push.material_id];
 
     StructuredBuffer <Camera> camera_buffer = ResourceDescriptorHeap[push.camera_id];
     Camera camera = camera_buffer[0];
@@ -60,7 +60,17 @@ PS_Input VS_Main(uint vertex_id : SV_VertexID)
     return result;
 }
 
-float4 PS_Main(PS_Input input) : SV_TARGET
+float4 ps_main(PS_Input input) : SV_TARGET
 {
-    return float4(input.tangent.xyz, 1.0);
+    SamplerState anisotropic_sampler = SamplerDescriptorHeap[push.anisotropic_sampler_id];
+
+    StructuredBuffer<Material> material_buf = ResourceDescriptorHeap[push.material_id];
+    Material material = material_buf[0];
+
+    Texture2D albedo_texture = ResourceDescriptorHeap[material.albedo_id];
+    float4 albedo = albedo_texture.Sample(anisotropic_sampler, input.uv);
+
+    if (albedo.a < 1e-6) { discard; }
+
+    return albedo;
 }
