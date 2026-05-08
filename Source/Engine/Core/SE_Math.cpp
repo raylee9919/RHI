@@ -174,7 +174,7 @@ namespace Engine
         return l;
     }
 
-    m4x4 m4x4::Identity()
+    m4x4 m4x4::identity()
     {
         m4x4 m;
         m.rows[0].lane = _mm_setr_ps(1.f, 0.f, 0.f, 0.f);
@@ -184,7 +184,7 @@ namespace Engine
         return m;
     }
 
-    m4x4 m4x4::Scale(f32 x, f32 y, f32 z)
+    m4x4 m4x4::scale(f32 x, f32 y, f32 z)
     {
         m4x4 m;
         m.rows[0].lane = _mm_setr_ps(  x, 0.f, 0.f, 0.f);
@@ -194,7 +194,7 @@ namespace Engine
         return m;
     }
 
-    m4x4 m4x4::LookAtLH(vec3 eye, vec3 at, vec3 up)
+    m4x4 m4x4::look_at_lh(vec3 eye, vec3 at, vec3 up)
     {
         m4x4 m;
 
@@ -210,12 +210,12 @@ namespace Engine
         return m;
     }
 
-    m4x4 m4x4::LookToLH(vec3 eye, vec3 dir, vec3 up)
+    m4x4 m4x4::look_to_lh(vec3 eye, vec3 dir, vec3 up)
     {
-        return LookAtLH(eye, eye + dir, up);
+        return look_at_lh(eye, eye + dir, up);
     }
 
-    m4x4 m4x4::PerspectiveLH(f32 fov, f32 aspect_ratio, f32 near_z, f32 far_z)
+    m4x4 m4x4::perspective_lh(f32 fov, f32 aspect_ratio, f32 near_z, f32 far_z)
     {
         m4x4 m;
         CORE_ASSERT(near_z > 0.f && far_z > 0.f && (near_z - far_z != 0.f));

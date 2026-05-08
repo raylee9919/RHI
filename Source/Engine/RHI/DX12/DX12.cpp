@@ -4,7 +4,6 @@
 
 #include "Core/SE_Basics.h"
 
-#if 0
 extern "C"
 {
     __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
@@ -13,7 +12,6 @@ extern "C"
     __declspec(dllexport) extern const u32 D3D12SDKVersion = 619;
     __declspec(dllexport) extern const char* D3D12SDKPath = ".\\.";
 }
-#endif
 
 namespace Engine
 {
@@ -335,7 +333,7 @@ namespace Engine
         int index = -1;
         for (u32 ni = 0; ni < heap->num_nodes; ++ni) {
             u64 bits = heap->free_list[ni];
-            int b = tzcnt(bits);
+            int b = tzcnt64(bits);
             if (b < 64) {
                 bits ^= (1ull << b);
                 index = ni * 64 + b;
@@ -758,18 +756,16 @@ namespace Engine
 
     ENGINE_API void dx12_create_srv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, u32 num_elements, u32 stride_in_bytes)
     {
-        D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {
-            .Format                  = DXGI_FORMAT_UNKNOWN,
-            .ViewDimension           = D3D12_SRV_DIMENSION_BUFFER,
-            .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-            .Buffer = {
-                .FirstElement         = 0,
-                .NumElements          = num_elements,
-                .StructureByteStride  = stride_in_bytes,
-                .Flags                = D3D12_BUFFER_SRV_FLAG_NONE
-            }
-        };
-        device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
+        if (resource->desc.type == DX12_RESOURCE_TYPE_BUFFER) {
+            auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::StructuredBuffer(num_elements, stride_in_bytes);
+            device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
+        } else if (resource->desc.type == DX12_RESOURCE_TYPE_TEXTURE_2D) {
+            auto tex = resource->desc.texture;
+            auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::Tex2D(tex.format, tex.mip_levels);
+            device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
+        } else {
+            assert(0);
+        }
     }
 
     ENGINE_API void dx12_upload_buffer(DX12_Device *device, DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list, DX12_Fence* fence, DX12_Resource* resource, void* data, u64 size)
@@ -804,5 +800,4 @@ namespace Engine
 
         dx12_dealloc_resource(upload_buffer);
     }
-
 }

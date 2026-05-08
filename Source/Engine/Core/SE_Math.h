@@ -71,11 +71,11 @@ namespace Engine
         m4x4() = default;
         m4x4(Xform xform);
 
-        static m4x4 Identity();
-        static m4x4 Scale(f32 x, f32 y, f32 z);
-        static m4x4 LookAtLH(vec3 from, vec3 at, vec3 up);
-        static m4x4 LookToLH(vec3 eye, vec3 dir, vec3 up);
-        static m4x4 PerspectiveLH(f32 fov, f32 aspect_ratio, f32 near_z, f32 far_z);
+        static m4x4 identity();
+        static m4x4 scale(f32 x, f32 y, f32 z);
+        static m4x4 look_at_lh(vec3 from, vec3 at, vec3 up);
+        static m4x4 look_to_lh(vec3 eye, vec3 dir, vec3 up);
+        static m4x4 perspective_lh(f32 fov, f32 aspect_ratio, f32 near_z, f32 far_z);
     };
 
     struct ENGINE_API AABB
@@ -88,7 +88,7 @@ namespace Engine
         static AABB RevInf();
     };
 
-    FORCE_INLINE f32 DegreeToRadian(f32 f)
+    FORCE_INLINE f32 to_radian(f32 f)
     {
         constexpr f32 d = (f32)PI / 180.f;
         return f * d;

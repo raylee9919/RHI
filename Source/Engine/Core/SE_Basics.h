@@ -4,9 +4,13 @@
 
 #include <cstdint>
 #include <stack>
+#include <unordered_set>
+#include <unordered_map>
 #include <type_traits>
 #include <bit>
 #include <string>
+#include <iostream>
+#include <fstream>
 
 typedef int8_t          int8;
 typedef int16_t        int16;
@@ -117,7 +121,7 @@ namespace Engine
         return x & ~(align - 1);
     }
 
-    FORCE_INLINE int tzcnt(unsigned int x) {
+    FORCE_INLINE int tzcnt64(u64 x) {
         return std::countr_zero(x);
     }
 
@@ -128,9 +132,13 @@ namespace Engine
     static const f32 F32_MAX = 3.402823e+38f;
     static const f32 F32_MIN = -3.402823e+38f;
 
-
-
     
     template<typename T>
     using Stack = std::stack<T>;
+
+    template<typename T>
+    using Set = std::unordered_set<T>;
+
+    template<typename K, typename V>
+    using Hash_Table = std::unordered_map<K, V>;
 }

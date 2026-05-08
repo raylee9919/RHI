@@ -2,14 +2,10 @@
 
 #include "Renderer.h"
 
-#include "RHI/DX12/RHI_DX12.h"
-
 #include "Input/Input.h"
 
 namespace Engine
 {
-    using namespace DX12;
-
     namespace Render
     {
         void Camera::Update(f32 dt, Input_System* input)
@@ -86,8 +82,8 @@ namespace Engine
                 }
             }
 
-            view      = m4x4::LookToLH(position.xyz, forward, vec3(0.f, 1.f, 0.f));
-            proj      = m4x4::PerspectiveLH(DegreeToRadian(fov), aspect_ratio, near_z, far_z);
+            view      = m4x4::look_to_lh(position.xyz, forward, vec3(0.f, 1.f, 0.f));
+            proj      = m4x4::perspective_lh(to_radian(fov), aspect_ratio, near_z, far_z);
             view_proj = proj * view;
         }
     }

@@ -3,8 +3,7 @@
 
 #define PUSH_CONSTANTS(Type, Name) ConstantBuffer<Type> Name : register(b0)
 
-struct Material
-{
+struct Material {
     int albedo_id;
     int normal_id;
     int orm_id;
@@ -12,32 +11,28 @@ struct Material
     int sampler_id;
 };
 
-struct Vertex
-{
+struct Vertex {
     float3 position;
     float3 normal;
     float2 uv;
     float4 tangent;
 };
 
-struct Camera
-{
+struct Camera {
     float4x4 view;
     float4x4 proj;
     float4x4 view_proj;
     float4 position;
 };
 
-struct Push_Constants
-{
+struct Push_Constants {
     uint vertex_buffer_id;
     uint material_id;
     uint camera_id;
 };
 PUSH_CONSTANTS(Push_Constants, push);
 
-struct PS_Input
-{
+struct PS_Input {
     float4 sv_position : SV_POSITION;
     float3 position    : POSITION;
     float3 normal      : NORMAL;
