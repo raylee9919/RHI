@@ -184,7 +184,7 @@ namespace Engine
     ENGINE_API void dx12_destroy_descriptor_heap(DX12_Descriptor_Heap* heap);
 
     ENGINE_API DX12_Descriptor dx12_alloc_descriptor(DX12_Descriptor_Heap* heap);
-    ENGINE_API void DX12_release_descriptor(const DX12_Descriptor& descriptor);
+    ENGINE_API void dx12_dealloc_descriptor(const DX12_Descriptor& descriptor);
 
     ENGINE_API void dx12_execute_command_list(DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list);
 

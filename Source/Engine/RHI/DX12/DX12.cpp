@@ -192,7 +192,7 @@ namespace Engine
             if (swap_chain->native_swap_chain) { swap_chain->native_swap_chain->Release(); }
             for (u32 i = 0; i < swap_chain->num_frames; ++i) {
                 swap_chain->resources[i]->Release();
-                DX12_release_descriptor(swap_chain->rtvs[i]);
+                dx12_dealloc_descriptor(swap_chain->rtvs[i]);
             }
             delete [] swap_chain->resources;
             delete [] swap_chain->rtvs;
@@ -366,7 +366,7 @@ namespace Engine
         return result;
     }
 
-    ENGINE_API void DX12_release_descriptor(const DX12_Descriptor& descriptor)
+    ENGINE_API void dx12_dealloc_descriptor(const DX12_Descriptor& descriptor)
     {
         u64 a = descriptor.index / 64;
         u64 b = descriptor.index % 64;
@@ -607,6 +607,7 @@ namespace Engine
             result = new DX12_Resource;
             result->desc = desc;
             result->native_resource = resource;
+            resource->SetName(L"HELLO");
         }
 
         return result;

@@ -55,7 +55,32 @@ struct Resource_State {
     Hash_Table <String, Material> materials;
     Hash_Table <String, Mesh_Resource> meshes;
 
-    FORCE_INLINE void alloc_material(Material m) { materials[m.name] = m; }
+    void alloc_material(Material m) { materials[m.name] = m; }
+    void clear()
+    {
+        Array <String> material_names;
+        for (auto& it : materials) {
+            dx12_dealloc_resource(it.second.resource);
+            dx12_dealloc_descriptor(it.second.srv);
+            for (auto* tex : it.second.resources) {
+                dx12_dealloc_resource(tex);
+            }
+            material_names.push_back(it.first);
+        }
+        for (String& name : material_names) { materials.erase(name); }
+
+
+        Array <String> mesh_names;
+        for (auto& mesh : meshes) {
+            for (auto& it : mesh.second.slices) {
+                dx12_dealloc_resource(it.vertex_buffer);
+                dx12_dealloc_descriptor(it.vertex_buffer_descriptor);
+                dx12_dealloc_resource(it.index_buffer);
+            }
+            mesh_names.push_back(mesh.first);
+        }
+        for (String& name : mesh_names) { meshes.erase(name); }
+    }
 };
 
 INTERNAL Mesh_Resource
@@ -588,11 +613,15 @@ int main()
     dx12_destroy_fence(fence);
     dx12_destroy_command_list(cmd_list);
     dx12_destroy_command_queue(cmd_queue);
+    dx12_dealloc_resource(camera_resource);
+    resource_state->clear();
+
     dx12_destroy_device(device);
 
     deinit_shader_compiler(compiler);
 
     destroy_window(window);
+
 
     return 0;
 }
