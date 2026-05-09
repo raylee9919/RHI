@@ -79,7 +79,7 @@ float4 ps_main(PS_Input input) : SV_TARGET
 
     // @Temporary: Debug light scene
     float3 radiance = 1.0;
-    float3 l = normalize(float3(1.0, 2.0, -1.0));
+    float3 l = normalize(float3(1.0, 1.0, -1.0));
     float3 v = normalize(camera.position.xyz - position);
     float cos_falloff = max(dot(n, l), 0.0);
     float3 res = radiance * cos_falloff * albedo;
