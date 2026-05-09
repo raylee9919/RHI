@@ -21,8 +21,8 @@ namespace Engine
         bool            is_running;
         Input_System*   my_input_system;
 
-        [[nodiscard]] bool  poll_events();
-        [[nodiscard]] void* get_platform_window();
+        void  poll_events();
+        void* get_platform_window();
     };
 
     ENGINE_API Window*  create_window(String title, int width, int height);

@@ -213,11 +213,6 @@ namespace Engine
             }
         }
 
-        u32 Reflection::get_num_input_parameters()
-        {
-            return shader_desc.InputParameters;
-        }
-
         void Reflection::get_input_parameters(D3D12_INPUT_ELEMENT_DESC* descs)
         {
             u32 num_input_params = shader_desc.InputParameters;

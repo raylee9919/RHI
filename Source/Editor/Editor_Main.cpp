@@ -15,19 +15,107 @@ using namespace Engine;
 using namespace DXIL;
 
 // Sync with shader!
-struct Push_Constants {
+struct GBuffer_Push_Constants {
     u32 vertex_buffer_id;
     u32 material_id;
     u32 camera_id;
+    u32 anisotropic_sampler_id;
+};
+
+struct Defer_Push_Constants {
+    u32 position_id;
+    u32 normal_id;
+    u32 uv_id;
+    u32 material_id;
+    u32 camera_id;
+    u32 linear_sampler_id;
+    u32 anisotropic_sampler_id;
+};
+
+struct Blit_Push_Constants {
+    u32 color_id;
+    u32 linear_sampler_id;
 };
 
 // Sync with shader!
-struct Camera {
+struct Shader_Camera {
     m4x4 view;
     m4x4 proj;
     m4x4 view_proj;
     vec4 position;
 };
+
+struct Camera {
+    vec3 position;
+    f32 aspect_ratio;
+    f32 fov;
+    f32 near_z;
+    f32 far_z;
+    f32 yaw;
+    f32 pitch;
+    f32 speed;
+    f32 last_mouse_x;
+    f32 last_mouse_y;
+    m4x4 view;
+    m4x4 proj;
+    m4x4 view_proj;
+
+    void update(f32 dt, Input_System* input)
+    {
+        vec3 forward = vec3(0.f, 0.f, 1.f);
+        vec4 f = y_rotation(yaw) * x_rotation(pitch) * vec4(forward, 0.f);
+        forward = normalize(f.xyz);
+        vec3 right = cross(forward, vec3(0.f, 1.f, 0.f));
+        vec3 up = vec3(0.f, 1.f, 0.f);
+
+        f32 move_speed = speed;
+        if (input->key_is_down[KEY_LEFT_SHIFT]) {
+            move_speed *= 3.0f;
+        }
+
+        f32 factor = dt * move_speed;
+
+        if (input->key_is_down[KEY_E]) { position += ( up      * factor ); }
+        if (input->key_is_down[KEY_Q]) { position -= ( up      * factor ); }
+        if (input->key_is_down[KEY_W]) { position += ( forward * factor ); }
+        if (input->key_is_down[KEY_S]) { position -= ( forward * factor ); }
+        if (input->key_is_down[KEY_D]) { position += ( right   * factor ); }
+        if (input->key_is_down[KEY_A]) { position -= ( right   * factor ); }
+
+        if (input->mouse_is_down[MOUSE_LEFT]) {
+            if (!input->mouse_was_down[MOUSE_LEFT]) {
+                last_mouse_x = input->current_mouse_x;
+                last_mouse_y = input->current_mouse_y;
+            } else {
+                f32 dx = input->current_mouse_x - last_mouse_x;
+                f32 dy = input->current_mouse_y - last_mouse_y;
+
+                f32 rot_speed = 0.125f;
+                yaw   += (rot_speed * dx * dt);
+                pitch -= (rot_speed * dy * dt);
+                yaw   = fmod(yaw, PI * 2.f);
+                pitch = Clamp(pitch, -PI * 0.45f, PI * 0.45f);
+
+                last_mouse_x = input->current_mouse_x;
+                last_mouse_y = input->current_mouse_y;
+            }
+        }
+
+        view      = m4x4::look_to_lh(position, forward, vec3(0.f, 1.f, 0.f));
+        proj      = m4x4::perspective_lh(fov, aspect_ratio, near_z, far_z);
+        view_proj = proj * view;
+    }
+};
+
+Shader_Camera get_shader_camera(Camera* camera) {
+    Shader_Camera result = {
+        .view      = camera->view,
+        .proj      = camera->proj,
+        .view_proj = camera->view_proj,
+        .position  = vec4(camera->position, 1.0f),
+    };
+    return result;
+}
 
 struct Entity {
     String mesh_name;
@@ -313,6 +401,7 @@ INTERNAL Material material_from_json(DX12_Device* device, DX12_Command_Queue* cm
     mat.name = json["name"].get<std::string>();
 
     // @Todo: default material id
+    // @Robustness
     auto [albedo_tex, albedo_id]     = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,   "albedo", DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
     auto [orm_tex, orm_id]           = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,      "orm", DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
     auto [normal_tex, normal_id]     = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,   "normal", DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
@@ -341,6 +430,74 @@ INTERNAL Material material_from_json(DX12_Device* device, DX12_Command_Queue* cm
     }
 
     return mat;
+}
+
+void init_pipeline_state(DX12_Device* device, Shader_Compiler* compiler, DX12_Pipeline_State* out_pso, ID3D12RootSignature* root_signature, DXGI_FORMAT* rtv_formats, DXGI_FORMAT dsv_format, const String& path, D3D12_CULL_MODE cull_mode, bool depth_test)
+{
+    // read file.
+    u64 length = read_entire_file(path, nullptr);
+    u8* source = new u8[length];
+    read_entire_file(path, source);
+
+    // entries/profiles
+    const char* vs_entry   = "vs_main";
+    const char* vs_profile = "vs_6_6";
+    const char* ps_entry   = "ps_main";
+    const char* ps_profile = "ps_6_6";
+
+    // compile and reflect.
+    auto compiled_vs   = compiler->compile(true, source, length, vs_entry, vs_profile);
+    auto vs_reflection = compiler->reflect(compiled_vs.result);
+
+    auto compiled_ps   = compiler->compile(true, source, length, ps_entry, ps_profile);
+    auto ps_reflection = compiler->reflect(compiled_ps.result);
+
+    u32 num_input_elements = vs_reflection.shader_desc.InputParameters;
+    u32 num_render_targets = ps_reflection.shader_desc.OutputParameters;
+
+    Array <D3D12_INPUT_ELEMENT_DESC> vs_input_elements(num_input_elements);
+    vs_reflection.get_input_parameters(vs_input_elements.data());
+
+    // pso creation
+    DX12_Graphics_Pipeline_Desc pso_desc = {
+        .root_signature     = root_signature,
+
+        .num_input_elements = num_input_elements,
+        .input_elements     = vs_input_elements.data(),
+
+        .topology           = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+
+        .cull_mode          = cull_mode,
+
+        .depth_enabled = depth_test,
+        .num_render_targets = num_render_targets,
+        .dsv_format  = dsv_format,
+
+        .vs_bytecode = compiled_vs.bytecode,
+        .vs_length   = compiled_vs.length, 
+
+        .ps_bytecode = compiled_ps.bytecode,
+        .ps_length   = compiled_ps.length, 
+    };
+    memcpy(&pso_desc.rtv_formats, rtv_formats, sizeof(pso_desc.rtv_formats[0]) * num_render_targets);
+
+    *out_pso = dx12_create_graphics_pipeline_state(device, pso_desc);
+
+    // Cleanup
+    vs_reflection.release();
+    compiled_vs.release();
+
+    compiled_ps.release();
+    ps_reflection.release();
+
+    delete [] source;
+}
+
+void deinit_pipeline_state(DX12_Pipeline_State* pso)
+{
+    if (pso) {
+        if (pso->pso) { pso->pso->Release(); }
+    }
 }
 
 int main()
@@ -377,15 +534,9 @@ int main()
     u32 num_frames = 3;
     auto* swap_chain = dx12_create_swap_chain(device, cmd_queue, rtv_heap, (HWND)window->get_platform_window(), tex_width, tex_height, num_frames);
 
-    //DXGI_FORMAT rtv_format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    auto* bindless_root_signature = dx12_create_bindless_root_signature(device);
+
     DXGI_FORMAT dsv_format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-
-    //auto* color_texture_resource = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D,
-    //                                                   .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-    //                                                   .texture = { .format = rtv_format,
-    //                                                   .width = tex_width, .height = tex_height,
-    //                                                   .mip_levels = 1, .depth = 1, .num_samples = 1 } });
-
     auto* depth_texture_resource = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D,
                                                        .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,
                                                        .do_clear = true,
@@ -394,100 +545,112 @@ int main()
                                                        .width = tex_width, .height = tex_height,
                                                        .mip_levels = 1, .depth = 1, .num_samples = 1 } });
 
+
+    // Gbuffer
+    //
     auto gbuffer_position_format = DXGI_FORMAT_R32G32B32A32_FLOAT;
     auto* gbuffer_position = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
                                                  .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
                                                  .texture = { .format = gbuffer_position_format, .width = tex_width, .height = tex_height,
-                                                 .mip_levels = 1, .depth = 1, .num_samples = 1}});
+                                                 .mip_levels = 1, .depth = 1, .num_samples = 1 },
+                                                 .name = "G-Buffer Position"});
     auto gbuffer_position_rtv = dx12_alloc_descriptor(rtv_heap);
     dx12_create_rtv(device, gbuffer_position, &gbuffer_position_rtv, { .Format = gbuffer_position_format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
+    auto gbuffer_position_srv = dx12_alloc_descriptor(res_heap);
+    dx12_create_srv(device, gbuffer_position, &gbuffer_position_srv);
+
+    auto gbuffer_normal_format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    auto* gbuffer_normal = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
+                                                 .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+                                                 .texture = { .format = gbuffer_normal_format, .width = tex_width, .height = tex_height,
+                                                 .mip_levels = 1, .depth = 1, .num_samples = 1 },
+                                                 .name = "G-Buffer Normal"});
+    auto gbuffer_normal_rtv = dx12_alloc_descriptor(rtv_heap);
+    dx12_create_rtv(device, gbuffer_normal, &gbuffer_normal_rtv, { .Format = gbuffer_normal_format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
+    auto gbuffer_normal_srv = dx12_alloc_descriptor(res_heap);
+    dx12_create_srv(device, gbuffer_normal, &gbuffer_normal_srv);
+
+    auto gbuffer_uv_format = DXGI_FORMAT_R32G32_FLOAT;
+    auto* gbuffer_uv = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
+                                                 .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+                                                 .texture = { .format = gbuffer_uv_format, .width = tex_width, .height = tex_height,
+                                                 .mip_levels = 1, .depth = 1, .num_samples = 1 },
+                                                 .name = "G-Buffer UV"});
+    auto gbuffer_uv_rtv = dx12_alloc_descriptor(rtv_heap);
+    dx12_create_rtv(device, gbuffer_uv, &gbuffer_uv_rtv, { .Format = gbuffer_uv_format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
+    auto gbuffer_uv_srv = dx12_alloc_descriptor(res_heap);
+    dx12_create_srv(device, gbuffer_uv, &gbuffer_uv_srv);
 
     auto gbuffer_material_format = DXGI_FORMAT_R32_UINT;
     auto* gbuffer_material = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
                                                  .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
                                                  .texture = { .format = gbuffer_material_format, .width = tex_width, .height = tex_height,
-                                                 .mip_levels = 1, .depth = 1, .num_samples = 1}});
+                                                 .mip_levels = 1, .depth = 1, .num_samples = 1 },
+                                                 .name = "G-Buffer Material ID"});
     auto gbuffer_material_rtv = dx12_alloc_descriptor(rtv_heap);
     dx12_create_rtv(device, gbuffer_material, &gbuffer_material_rtv, { .Format = gbuffer_material_format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
+    auto gbuffer_material_srv = dx12_alloc_descriptor(res_heap);
+    dx12_create_srv(device, gbuffer_material, &gbuffer_material_srv);
 
-    auto* bindless_root_signature = dx12_create_bindless_root_signature(device);
-
-    auto* pso = new DX12_Pipeline_State;
+    String gbuffer_path = (asset_dir / "Shader/HLSL/GBuffer.shader").string();
+    auto* gbuffer_pso = new DX12_Pipeline_State;
     {
-        // Reflection
-        String path = (asset_dir / "Shader/HLSL/GBuffer.shader").string();
-        u64 length = read_entire_file(path, nullptr);
-        u8* source = new u8[length];
-        read_entire_file(path, source);
-
-        auto compiled_vs = compiler->compile(true, source, length, "vs_main", "vs_6_6");
-        auto vs_reflection = compiler->reflect(compiled_vs.result);
-        D3D12_INPUT_ELEMENT_DESC* vs_input_elements = new D3D12_INPUT_ELEMENT_DESC[vs_reflection.get_num_input_parameters()];
-        vs_reflection.get_input_parameters(vs_input_elements);
-
-        auto compiled_ps = compiler->compile(true, source, length, "ps_main", "ps_6_6");
-
-
-        // PSO creation
-        DX12_Graphics_Pipeline_Desc pso_desc = {
-            .root_signature     = bindless_root_signature,
-
-            .num_input_elements = vs_reflection.get_num_input_parameters(),
-            .input_elements     = vs_input_elements,
-
-            .topology           = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
-
-            .cull_mode          = D3D12_CULL_MODE_BACK,
-
-            .depth_enabled = true,
-            .num_render_targets = 2,
-            .rtv_formats = {
-                gbuffer_position_format, 
-                gbuffer_material_format
-            },
-            .dsv_format  = dsv_format,
-
-            .vs_bytecode = compiled_vs.bytecode,
-            .vs_length   = compiled_vs.length, 
-
-            .ps_bytecode = compiled_ps.bytecode,
-            .ps_length   = compiled_ps.length, 
-        };
-        *pso = dx12_create_graphics_pipeline_state(device, pso_desc);
-
-
-        // Cleanup
-        delete [] vs_input_elements;
-        vs_reflection.release();
-        compiled_vs.release();
-
-        compiled_ps.release();
-
-        delete [] source;
+        DXGI_FORMAT rtv_formats[] = { gbuffer_position_format, gbuffer_normal_format, gbuffer_uv_format, gbuffer_material_format };
+        init_pipeline_state(device, compiler, gbuffer_pso, bindless_root_signature, rtv_formats, dsv_format, gbuffer_path, D3D12_CULL_MODE_BACK, true);
     }
+
+    // Defer
+    //
+    auto defer_format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    auto* defer_texture = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
+                                              .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+                                              .texture = { .format = defer_format, .width = tex_width, .height = tex_height,
+                                              .mip_levels = 1, .depth = 1, .num_samples = 1}});
+    auto defer_rtv = dx12_alloc_descriptor(rtv_heap);
+    dx12_create_rtv(device, defer_texture, &defer_rtv, { .Format = defer_format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
+    auto defer_srv= dx12_alloc_descriptor(res_heap);
+    dx12_create_srv(device, defer_texture, &defer_srv);
+
+    String defer_shader_path = (asset_dir / "Shader/HLSL/Defer.shader").string();
+    auto* defer_pso = new DX12_Pipeline_State;
+    {
+        DXGI_FORMAT rtv_formats[] = { defer_format };
+        init_pipeline_state(device, compiler, defer_pso, bindless_root_signature, rtv_formats, dsv_format, defer_shader_path, D3D12_CULL_MODE_NONE, false);
+    }
+
+    // Blit
+    //
+    auto blit_format = swap_chain->resources[0]->GetDesc().Format;
+    String blit_shader_path = (asset_dir / "Shader/HLSL/Blit.shader").string();
+    auto* blit_pso = new DX12_Pipeline_State;
+    {
+        DXGI_FORMAT rtv_formats[] = { blit_format };
+        init_pipeline_state(device, compiler, blit_pso, bindless_root_signature, rtv_formats, dsv_format, blit_shader_path, D3D12_CULL_MODE_NONE, false);
+    }
+
 
     // @Temporary
-    Camera* camera = new Camera;
+    //
+    Camera camera; 
     {
-        const f32 fov          = to_radian(90.0f);
-        const f32 aspect_ratio = 9.f / 16.f;
-        const f32 near_z       = 0.1f;
-        const f32 far_z        = 10000.0f;
+        camera.position     = vec3(0.f, 300.f, 0.f);
+        camera.aspect_ratio = 9.f / 16.f;
+        camera.fov          = to_radian(90.0f);
+        camera.near_z       = 0.1f;
+        camera.far_z        = 10000.0f;
+        camera.yaw          = PI * 0.5f;
+        camera.pitch        = to_radian(0.f);
+        camera.speed        = 128.f;
+    };
 
-        camera->position  = vec4(600.f, 200.f, 0.f, 1.f);
-        camera->view      = m4x4::look_at_lh(camera->position.xyz, vec3(0.f), vec3(0.f, 1.f, 0.f));
-        camera->proj      = m4x4::perspective_lh(fov, aspect_ratio, near_z, far_z);
-        camera->view_proj = camera->proj * camera->view;
-    }
-    u32 size = (u32)sizeof(*camera);
-    auto* camera_resource = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .buffer = { .size = size } });
-    dx12_upload_buffer(device, cmd_queue, cmd_list, fence, camera_resource, camera, size);
+    Shader_Camera shader_camera = get_shader_camera(&camera);
+    auto* camera_resource = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .buffer = { .size = (u32)sizeof(shader_camera) } });
     auto camera_srv = dx12_alloc_descriptor(res_heap);
-    dx12_create_srv(device, camera_resource, &camera_srv, 1, size);
+    dx12_create_srv(device, camera_resource, &camera_srv, 1, (u32)sizeof(shader_camera));
     u32 camera_id = camera_srv.index;
 
-
     // @Temporary: Create linear sampler.
+    //
     auto linear_sampler_descriptor = dx12_alloc_descriptor(sampler_heap);
     {
         D3D12_SAMPLER_DESC desc = {
@@ -555,7 +718,17 @@ int main()
     // Main loop
     //
     while (window->is_running) {
-        while (window->poll_events()) {}
+        window->poll_events();
+
+        f32 time_elapsed = 0.017f;
+        constexpr f32 dt = 1.f / 60.f;
+        for (;time_elapsed >= dt; time_elapsed -= dt) {
+            camera.update(dt, window->my_input_system);
+        }
+
+        // Upload camera resource
+        shader_camera = get_shader_camera(&camera);
+        dx12_upload_buffer(device, cmd_queue, cmd_list, fence, camera_resource, &shader_camera, (u32)sizeof(shader_camera));
 
         cmd_list->begin();
         {
@@ -564,24 +737,24 @@ int main()
             cmd_list->set_resource_and_sampler_heap(res_heap, sampler_heap);
 
 
-            cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
             cmd_list->transition_barrier(depth_texture_resource->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
             {
-                cmd_list->clear_rtv(swap_chain->get_current_rtv(), 1.0f, 0.0f, 1.0f, 0.0f);
                 cmd_list->clear_dsv(&dsv, 1.0f, 0, 0, tex_width, tex_height);
             }
-            cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
             cmd_list->transition_barrier(depth_texture_resource->native_resource, 0, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_COMMON);
 
 
             cmd_list->transition_barrier(gbuffer_position->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
+            cmd_list->transition_barrier(gbuffer_normal->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
+            cmd_list->transition_barrier(gbuffer_uv->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
             cmd_list->transition_barrier(gbuffer_material->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
+            cmd_list->transition_barrier(depth_texture_resource->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
             {
-                DX12_Descriptor *rtvs[] = { &gbuffer_position_rtv, &gbuffer_material_rtv };
+                DX12_Descriptor *rtvs[] = { &gbuffer_position_rtv, &gbuffer_normal_rtv, &gbuffer_uv_rtv, &gbuffer_material_rtv };
                 cmd_list->set_render_target(count_of(rtvs), rtvs, &dsv);
 
                 cmd_list->set_graphics_root_signature(bindless_root_signature);
-                cmd_list->set_pipeline_state(pso);
+                cmd_list->set_pipeline_state(gbuffer_pso);
                 cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
                 {
@@ -589,20 +762,78 @@ int main()
                     auto mesh = resource_state->meshes[e->mesh_name];
                     for (auto& slice : mesh.slices) {
                         auto mat = resource_state->materials[slice.material_name];
-                        Push_Constants push = {
-                            .vertex_buffer_id = slice.vertex_buffer_descriptor.index,
-                            .material_id      = mat.id,
-                            .camera_id        = camera_id,
+                        GBuffer_Push_Constants push = {
+                            .vertex_buffer_id       = slice.vertex_buffer_descriptor.index,
+                            .material_id            = mat.id,
+                            .camera_id              = camera_id,
+                            .anisotropic_sampler_id = anisotropic_sampler_descriptor.index
                         };
 
-                        cmd_list->set_graphics_root_constants(0u, sizeof(Push_Constants) >> 2, &push);
+                        cmd_list->set_graphics_root_constants(0u, sizeof(push) >> 2, &push);
                         cmd_list->set_index_buffer(slice.index_buffer);
                         cmd_list->draw_indexed(slice.num_indices, 1);
                     }
                 }
             }
             cmd_list->transition_barrier(gbuffer_position->native_resource, 0, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
+            cmd_list->transition_barrier(gbuffer_normal->native_resource, 0, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
+            cmd_list->transition_barrier(gbuffer_uv->native_resource, 0, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
             cmd_list->transition_barrier(gbuffer_material->native_resource, 0, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
+            cmd_list->transition_barrier(depth_texture_resource->native_resource, 0, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_COMMON);
+
+
+            cmd_list->transition_barrier(defer_texture->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
+            cmd_list->transition_barrier(depth_texture_resource->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+            {
+                DX12_Descriptor *rtvs[] = { &defer_rtv };
+                cmd_list->set_render_target(count_of(rtvs), rtvs, &dsv);
+
+                cmd_list->set_graphics_root_signature(bindless_root_signature);
+                cmd_list->set_pipeline_state(defer_pso);
+                cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+                {
+                    Defer_Push_Constants push = {
+                        .position_id            = gbuffer_position_srv.index,
+                        .normal_id              = gbuffer_normal_srv.index,
+                        .uv_id                  = gbuffer_uv_srv.index,
+                        .material_id            = gbuffer_material_srv.index,
+                        .camera_id              = camera_srv.index,
+                        .linear_sampler_id      = linear_sampler_descriptor.index,
+                        .anisotropic_sampler_id = anisotropic_sampler_descriptor.index
+                    };
+
+                    cmd_list->set_graphics_root_constants(0u, sizeof(push) >> 2, &push);
+                    cmd_list->draw(3, 1);
+                }
+            }
+            cmd_list->transition_barrier(defer_texture->native_resource, 0, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
+            cmd_list->transition_barrier(depth_texture_resource->native_resource, 0, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_COMMON);
+
+
+
+            cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+            cmd_list->transition_barrier(depth_texture_resource->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+            {
+                DX12_Descriptor *rtvs[] = { swap_chain->get_current_rtv() };
+                cmd_list->set_render_target(count_of(rtvs), rtvs, &dsv);
+
+                cmd_list->set_graphics_root_signature(bindless_root_signature);
+                cmd_list->set_pipeline_state(blit_pso);
+                cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+                {
+                    Blit_Push_Constants push = {
+                        .color_id = defer_srv.index,
+                        .linear_sampler_id = linear_sampler_descriptor.index
+                    };
+
+                    cmd_list->set_graphics_root_constants(0u, sizeof(push) >> 2, &push);
+                    cmd_list->draw(3, 1);
+                }
+            }
+            cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+            cmd_list->transition_barrier(depth_texture_resource->native_resource, 0, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_COMMON);
         }
         cmd_list->end();
 
@@ -616,14 +847,19 @@ int main()
 
     // Cleanups
     //
-    pso->release();
+    dx12_dealloc_resource(gbuffer_position);
+    dx12_dealloc_resource(gbuffer_uv);
+    dx12_dealloc_resource(gbuffer_material);
+    deinit_pipeline_state(gbuffer_pso);
+
+    dx12_dealloc_resource(defer_texture);
+    deinit_pipeline_state(defer_pso);
 
     dx12_signal_fence(cmd_queue, fence);
     dx12_wait_fence(fence);
 
     bindless_root_signature->Release();
 
-    //dx12_dealloc_resource(color_texture_resource);
     dx12_dealloc_resource(depth_texture_resource);
 
     dx12_destroy_swap_chain(swap_chain);
@@ -636,8 +872,6 @@ int main()
     dx12_destroy_command_queue(cmd_queue);
     dx12_dealloc_resource(camera_resource);
     resource_state->clear();
-    dx12_dealloc_resource(gbuffer_position);
-    dx12_dealloc_resource(gbuffer_material);
 
     dx12_destroy_device(device);
 

@@ -96,6 +96,9 @@ namespace Engine
 
     ENGINE_API vec3 operator + (const vec3& l, const vec3& r);
     ENGINE_API vec3 operator - (const vec3& l, const vec3& r);
+    ENGINE_API vec3 operator * (const vec3& l, const f32 r);
+    ENGINE_API vec3& operator += (vec3& l, const vec3 r);
+    ENGINE_API vec3& operator -= (vec3& l, const vec3 r);
     ENGINE_API f32 dot(const vec3& l, const vec3& r);
     ENGINE_API vec3 cross(const vec3& l, const vec3& r);
     ENGINE_API vec3 normalize(const vec3& v);

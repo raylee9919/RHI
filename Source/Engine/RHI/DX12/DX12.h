@@ -71,10 +71,6 @@ namespace Engine
     struct DX12_Pipeline_State {
         DX12_Graphics_Pipeline_Desc desc;
         ID3D12PipelineState* pso = nullptr;
-
-        FORCE_INLINE void release() {
-            if (pso) { pso->Release(); pso = nullptr; }
-        }
     };
 
     struct ENGINE_API DX12_Command_List {
@@ -154,6 +150,8 @@ namespace Engine
             DX12_Resource_Desc_Buffer  buffer;
             DX12_Resource_Desc_Texture texture;
         };
+
+        String name = "";
     };
 
     struct DX12_Resource {

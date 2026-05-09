@@ -42,38 +42,32 @@ namespace Engine
 #endif
     }
 
-    bool Window::poll_events()
+    void Window::poll_events()
     {
-        SDL_Event event;
-
-        bool ended = SDL_PollEvent(&event);
-
-        if (event.type == SDL_EVENT_QUIT) {
-            is_running = false;
-        }
-
-        // Keyboard
-        //
-        if (event.type == SDL_EVENT_KEY_DOWN) {
-            Key key = KeyFromSDL(event.key.key);
-            my_input_system->key_is_down[key] = true;
-        }
-
-        if (event.type == SDL_EVENT_KEY_UP)
-        {
-            Key key = KeyFromSDL(event.key.key);
-            my_input_system->key_is_down[key] = false;
-        }
-
-        // Mouse
-        //
         memcpy(my_input_system->mouse_was_down, my_input_system->mouse_is_down, sizeof(my_input_system->mouse_was_down[0]) * ARRAY_COUNT(my_input_system->mouse_was_down));
 
-        SDL_MouseButtonFlags flags = SDL_GetMouseState(&my_input_system->current_mouse_x, &my_input_system->current_mouse_y);
-        my_input_system->mouse_is_down[MOUSE_LEFT]   = (flags & SDL_BUTTON_MASK(SDL_BUTTON_LEFT));
-        my_input_system->mouse_is_down[MOUSE_RIGHT]  = (flags & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT));
-        my_input_system->mouse_is_down[MOUSE_MIDDLE] = (flags & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE));
+        // Poll events
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            // Quit
+            if (event.type == SDL_EVENT_QUIT) { is_running = false; }
 
-        return ended;
+            // Keyboard
+            if (event.type == SDL_EVENT_KEY_DOWN) {
+                Key key = KeyFromSDL(event.key.key);
+                my_input_system->key_is_down[key] = true;
+            }
+
+            if (event.type == SDL_EVENT_KEY_UP) {
+                Key key = KeyFromSDL(event.key.key);
+                my_input_system->key_is_down[key] = false;
+            }
+
+            // Mouse
+            SDL_MouseButtonFlags flags = SDL_GetMouseState(&my_input_system->current_mouse_x, &my_input_system->current_mouse_y);
+            my_input_system->mouse_is_down[MOUSE_LEFT]   = (flags & SDL_BUTTON_MASK(SDL_BUTTON_LEFT));
+            my_input_system->mouse_is_down[MOUSE_RIGHT]  = (flags & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT));
+            my_input_system->mouse_is_down[MOUSE_MIDDLE] = (flags & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE));
+        }
     }
 }

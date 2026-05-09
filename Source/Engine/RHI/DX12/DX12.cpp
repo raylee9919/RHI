@@ -607,7 +607,7 @@ namespace Engine
             result = new DX12_Resource;
             result->desc = desc;
             result->native_resource = resource;
-            resource->SetName(L"HELLO");
+            resource->SetName(std::wstring(desc.name.begin(), desc.name.end()).c_str());
         }
 
         return result;

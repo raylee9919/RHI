@@ -35,7 +35,6 @@ namespace Engine
 
             void release();
 
-            u32 get_num_input_parameters();
             void get_input_parameters(D3D12_INPUT_ELEMENT_DESC* descs);
         };
 

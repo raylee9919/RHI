@@ -38,6 +38,31 @@ namespace Engine
         return v;
     }
 
+    vec3 operator * (const vec3& l, const f32 r)
+    {
+        vec3 v;
+        v.x = l.x * r;
+        v.y = l.y * r;
+        v.z = l.z * r;
+        return v;
+    }
+
+    vec3& operator += (vec3& l, const vec3 r)
+    {
+        l.x += r.x;
+        l.y += r.y;
+        l.z += r.z;
+        return l;
+    }
+
+    vec3& operator -= (vec3& l, const vec3 r)
+    {
+        l.x -= r.x;
+        l.y -= r.y;
+        l.z -= r.z;
+        return l;
+    }
+
     f32 dot(const vec3& l, const vec3& r)
     {
         f32 f = l.x * r.x + l.y * r.y + l.z * r.z;
