@@ -100,7 +100,6 @@ float4 ps_main(PS_Input input) : SV_TARGET
     // albedo
     Texture2D <float4> albedo_texture = ResourceDescriptorHeap[NonUniformResourceIndex(material.albedo_id)];
     float3 albedo = albedo_texture.Sample(anisotropic_sampler, uv).xyz;
-    albedo = pow(albedo, 2.2);
 
     // orm
     float occlusion = 0.0;
@@ -140,7 +139,6 @@ float4 ps_main(PS_Input input) : SV_TARGET
     float dist_falloff = 1.0 / (dist * dist);
 
     float3 result = BRDF * ndotl * radiance * dist_falloff;
-    result = pow(result, 1.0 / 2.2);
 
     return float4(result, 1.0);
 }

@@ -212,7 +212,15 @@ namespace Engine
 
             auto rtv = dx12_alloc_descriptor(rtv_heap);
             result->rtvs[i] = rtv;
-            device->native_device->CreateRenderTargetView(resources[i], nullptr, rtv.cpu_handle);
+            D3D12_RENDER_TARGET_VIEW_DESC rtv_desc = {
+                .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
+                .Texture2D = {
+                    .MipSlice   = 0,
+                    .PlaneSlice = 0
+                }
+            };
+            device->native_device->CreateRenderTargetView(resources[i], &rtv_desc, rtv.cpu_handle);
         }
 
         dx12_safe_release_and_set_to_null(&swap_chain_1);

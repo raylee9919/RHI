@@ -245,6 +245,10 @@ INTERNAL Array <Bitmap> load_image(const String& path, bool generate_mipmap)
         result.push_back(bitmap);
     }
 
+    // @Todo: Better mipmap generation. SIMD or use compute shader.
+    // Take sRGB textures into account.
+    // Something better than box filter. JBlow's articles my be handy.
+    //
     if (generate_mipmap) {
         u16 levels = (u16)floor(log2(max(x, y))) + 1;
         for (u16 i = 0; i < levels - 1; ++i) {
@@ -402,10 +406,10 @@ INTERNAL Material material_from_json(DX12_Device* device, DX12_Command_Queue* cm
 
     // @Todo: default material id
     // @Robustness
-    auto [albedo_tex, albedo_id]     = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,   "albedo", DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
-    auto [orm_tex, orm_id]           = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,      "orm", DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
-    auto [normal_tex, normal_id]     = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,   "normal", DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
-    auto [emissive_tex, emissive_id] = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json, "emissive", DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
+    auto [albedo_tex, albedo_id]     = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,   "albedo", DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, true, 0xffffffff);
+    auto [orm_tex, orm_id]           = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,      "orm",      DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
+    auto [normal_tex, normal_id]     = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,   "normal",      DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
+    auto [emissive_tex, emissive_id] = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json, "emissive",      DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
 
     mat.shader_material.albedo_id   = albedo_id;
     mat.shader_material.orm_id      = orm_id;
@@ -601,8 +605,8 @@ int main()
 
     // Create a window.
     String title = "This is a window";
-    int window_width  = 1920;
-    int window_height = 1080;
+    int window_width  = 2560;
+    int window_height = 1440;
     Window* window = create_window(title, window_width, window_height);
 
     // Resource state
