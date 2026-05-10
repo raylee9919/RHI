@@ -512,13 +512,14 @@ Shader_Asset shader_asset_from_file(const String& file_path) {
     std::ifstream f(file_path);
     nlohmann::json json = nlohmann::json::parse(f);
 
+
+    // If key doesn't exist, it'll fail, which is neat.
     auto render_targets = json["render_targets"];
     String name         = json["name"];
     String shader_path  = json["shader"];
     String cull         = json["cull"];
     String depth_format = json["depth_format"];
 
-    // If key doesn't exist, it'll fail, which is nice.
 
     // Render target formats
     Array <DXGI_FORMAT> formats;
@@ -529,6 +530,8 @@ Shader_Asset shader_asset_from_file(const String& file_path) {
             format = DXGI_FORMAT_R32G32B32A32_FLOAT;
         } else if (str == "R8G8B8A8_UNORM") {
             format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        } else if (str == "R8G8B8A8_SNORM") {
+            format = DXGI_FORMAT_R8G8B8A8_SNORM;
         } else if (str == "R32G32_FLOAT") {
             format = DXGI_FORMAT_R32G32_FLOAT;
         } else if (str == "R32_UINT") {
@@ -587,43 +590,6 @@ void deinit_pipeline_state(DX12_Pipeline_State* pso) {
         if (pso->pso) { pso->pso->Release(); }
     }
 }
-
-struct Render_Pass {
-    DX12_Pipeline_State*    pipeline_state;
-
-    Array <DX12_Resource*>  render_target_resources;
-    Array <DX12_Descriptor> rtvs;
-
-    DX12_Resource*          depth_resource;
-    DX12_Descriptor         dsv;
-};
-
-void commit_render_pass(Render_Pass* pass, DX12_Command_List* cmd_list, u32 num_draws, DX12_Resource** index_buffers, u32* num_indices)
-{
-    for (auto* it : pass->render_target_resources) { cmd_list->transition_barrier(it, 0, D3D12_RESOURCE_STATE_RENDER_TARGET); }
-    if (pass->depth_resource) { cmd_list->transition_barrier(pass->depth_resource, 0, D3D12_RESOURCE_STATE_DEPTH_WRITE); }
-    {
-        cmd_list->set_pipeline_state(pass->pipeline_state);
-
-        if (pass->pipeline_state->desc.topology == D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE) {
-            cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        } else {
-            assert(0);
-        }
-
-        DX12_Descriptor* dsv = pass->depth_resource ? &pass->dsv : nullptr;
-        cmd_list->set_render_target(pass->rtvs.size(), pass->rtvs.data(), dsv);
-
-        for (u32 i = 0; i < num_draws; ++i) {
-            cmd_list->set_index_buffer(index_buffers[i]);
-            cmd_list->draw_indexed(num_indices[i], 1);
-        }
-    }
-    for (auto* it : pass->render_target_resources) { cmd_list->transition_barrier(it, 0, D3D12_RESOURCE_STATE_COMMON); }
-    if (pass->depth_resource) { cmd_list->transition_barrier(pass->depth_resource, 0, D3D12_RESOURCE_STATE_COMMON); }
-}
-
-
 
 int main()
 {
@@ -769,7 +735,7 @@ int main()
     auto gbuffer_position_srv = dx12_alloc_descriptor(res_heap);
     dx12_create_srv(device, gbuffer_position, &gbuffer_position_srv);
 
-    auto gbuffer_normal_format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    auto gbuffer_normal_format = DXGI_FORMAT_R8G8B8A8_SNORM;
     auto* gbuffer_normal = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
                                                  .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
                                                  .texture = { .format = gbuffer_normal_format, .width = tex_width, .height = tex_height,
@@ -818,6 +784,8 @@ int main()
 
 
 
+    // Load shader meta data from disk.
+    //
     Hash_Table <String, DX12_Pipeline_State*> shader_table;
 
     for (const auto& entry : file_sys::directory_iterator(shader_dir)) {
@@ -830,6 +798,10 @@ int main()
             shader_table[shader_asset.name] = shader;
         }
     }
+
+
+
+
 
 
 
@@ -862,8 +834,6 @@ int main()
             cmd_list->transition_barrier(depth_texture_resource, 0, D3D12_RESOURCE_STATE_COMMON);
 
 
-            cmd_list->set_viewport(0, 0, tex_width, tex_height);
-            cmd_list->set_scissor(0, 0, tex_width, tex_height);
 
 
             Array <GBuffer_Push_Constants> gbuffer_push_constants; 
@@ -892,6 +862,8 @@ int main()
                 cmd_list->set_render_target(count_of(rtvs), rtvs, &dsv);
                 cmd_list->set_pipeline_state(gbuffer_shader);
                 cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                cmd_list->set_viewport(0, 0, tex_width, tex_height);
+                cmd_list->set_scissor(0, 0, tex_width, tex_height);
 
                 {
                     Entity* e = sponza;
@@ -920,6 +892,8 @@ int main()
 
                 cmd_list->set_pipeline_state(defer_shader);
                 cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                cmd_list->set_viewport(0, 0, tex_width, tex_height);
+                cmd_list->set_scissor(0, 0, tex_width, tex_height);
 
                 {
                     Defer_Push_Constants push = {
@@ -948,6 +922,8 @@ int main()
 
                 cmd_list->set_pipeline_state(blit_shader);
                 cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                cmd_list->set_viewport(0, 0, tex_width, tex_height);
+                cmd_list->set_scissor(0, 0, tex_width, tex_height);
 
                 {
                     Blit_Push_Constants push = {
