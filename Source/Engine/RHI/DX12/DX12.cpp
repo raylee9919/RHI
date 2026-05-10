@@ -24,6 +24,36 @@ namespace Engine
         }
     }
 
+    ENGINE_API DXGI_FORMAT dxgi_format_from_component_type_and_mask(D3D_REGISTER_COMPONENT_TYPE type, BYTE mask)
+    {
+        // Return UNKNOWN if not handled.
+        DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+
+        if (type == D3D_REGISTER_COMPONENT_FLOAT32) {
+            if (mask == 0b1111) {
+                format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+            } else if (mask == 0b0111) {
+                format = DXGI_FORMAT_R32G32B32_FLOAT;
+            } else if (mask == 0b0011) {
+                format = DXGI_FORMAT_R32G32_FLOAT;
+            } else if (mask == 0b0001) {
+                format = DXGI_FORMAT_R32_FLOAT;
+            }
+        } else if (type == D3D_REGISTER_COMPONENT_UINT32) {
+            if (mask == 0b1111) {
+                format = DXGI_FORMAT_R32G32B32A32_UINT;
+            } else if (mask == 0b0111) {
+                format = DXGI_FORMAT_R32G32B32_UINT;
+            } else if (mask == 0b0011) {
+                format = DXGI_FORMAT_R32G32_UINT;
+            } else if (mask == 0b0001) {
+                format = DXGI_FORMAT_R32_UINT;
+            }
+        }
+
+        return format;
+    }
+
     ENGINE_API DX12_Device* dx12_create_device()
     {
         bool use_debug_layer = true;
@@ -170,15 +200,19 @@ namespace Engine
             result->num_frames          = num_frames;
             result->current_frame_index = swap_chain_3->GetCurrentBackBufferIndex();
 
-            result->resources = new ID3D12Resource*[3];
-            result->rtvs = new DX12_Descriptor[3];
+            result->resources = new DX12_Resource [num_frames];
+            result->rtvs      = new DX12_Descriptor [num_frames];
         }
 
+        Array <ID3D12Resource*> resources(num_frames);
+
         for (u32 i = 0; i < num_frames; ++i) {
-            swap_chain_3->GetBuffer(i, IID_PPV_ARGS(&result->resources[i]));
+            swap_chain_3->GetBuffer(i, IID_PPV_ARGS(&resources[i]));
+            result->resources[i] = dx12_resource_from_native_resource(resources[i], D3D12_RESOURCE_STATE_PRESENT);
+
             auto rtv = dx12_alloc_descriptor(rtv_heap);
             result->rtvs[i] = rtv;
-            device->native_device->CreateRenderTargetView(result->resources[i], nullptr, rtv.cpu_handle);
+            device->native_device->CreateRenderTargetView(resources[i], nullptr, rtv.cpu_handle);
         }
 
         dx12_safe_release_and_set_to_null(&swap_chain_1);
@@ -191,7 +225,7 @@ namespace Engine
         if (swap_chain) {
             if (swap_chain->native_swap_chain) { swap_chain->native_swap_chain->Release(); }
             for (u32 i = 0; i < swap_chain->num_frames; ++i) {
-                swap_chain->resources[i]->Release();
+                dx12_dealloc_resource(&swap_chain->resources[i]);
                 dx12_dealloc_descriptor(swap_chain->rtvs[i]);
             }
             delete [] swap_chain->resources;
@@ -402,19 +436,22 @@ namespace Engine
         native_cmd_list->ClearDepthStencilView(descriptor->cpu_handle, D3D12_CLEAR_FLAG_DEPTH, depth, 0u, 1, &rect);
     }
 
-    void DX12_Command_List::transition_barrier(ID3D12Resource* resource, uint32_t subresource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after)
+    void DX12_Command_List::transition_barrier(DX12_Resource* resource, uint32_t subresource, D3D12_RESOURCE_STATES after)
     {
-        D3D12_RESOURCE_BARRIER barrier = {
-            .Type  = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            .Transition = {
-                .pResource   = resource,
-                .Subresource = subresource,
-                .StateBefore = before,
-                .StateAfter  = after,
-            }
-        };
-        native_cmd_list->ResourceBarrier(1, &barrier);
+        if (resource->current_state != after) {
+            D3D12_RESOURCE_BARRIER barrier = {
+                .Type  = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition = {
+                    .pResource   = resource->native_resource,
+                    .Subresource = subresource,
+                    .StateBefore = resource->current_state,
+                    .StateAfter  = after,
+                }
+            };
+            native_cmd_list->ResourceBarrier(1, &barrier);
+            resource->current_state = after;
+        }
     }
 
     void DX12_Command_List::set_pipeline_state(DX12_Pipeline_State* state)
@@ -471,12 +508,14 @@ namespace Engine
         native_cmd_list->IASetPrimitiveTopology(topology);
     }
 
-    void DX12_Command_List::set_render_target(u32 num_rtvs, DX12_Descriptor** rtvs, DX12_Descriptor* dsv)
+    void DX12_Command_List::set_render_target(u32 num_rtvs, DX12_Descriptor* rtvs, DX12_Descriptor* dsv)
     {
         D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[32];
         assert(num_rtvs < _countof(rtv_handles));
-        for (u32 i = 0; i < num_rtvs; ++i) { rtv_handles[i] = rtvs[i]->cpu_handle; }
+        for (u32 i = 0; i < num_rtvs; ++i) { rtv_handles[i] = rtvs[i].cpu_handle; }
+
         D3D12_CPU_DESCRIPTOR_HANDLE* dsv_handle = dsv ? &dsv->cpu_handle : nullptr;
+
         native_cmd_list->OMSetRenderTargets(num_rtvs, rtv_handles, false, dsv_handle);
     }
 
@@ -485,7 +524,7 @@ namespace Engine
         DXGI_FORMAT format = DXGI_FORMAT_R32_UINT;
         D3D12_INDEX_BUFFER_VIEW view = {
             .BufferLocation = resource->native_resource->GetGPUVirtualAddress(),
-            .SizeInBytes    = static_cast<UINT>(resource->desc.buffer.size),
+            .SizeInBytes    = static_cast <UINT> (resource->desc.buffer.size),
             .Format         = format
         };
         native_cmd_list->IASetIndexBuffer(&view);
@@ -518,23 +557,6 @@ namespace Engine
             fence->native_fence->SetEventOnCompletion(fence->value, fence->event);
             WaitForSingleObject(fence->event, INFINITE);
         }
-    }
-
-    void DX12_Swap_Chain::present()
-    {
-        UINT sync_interval = 0;
-        native_swap_chain->Present(sync_interval, 0); // @Temporary: flags?
-        current_frame_index = native_swap_chain->GetCurrentBackBufferIndex();
-    }
-
-    ID3D12Resource* DX12_Swap_Chain::get_current_resource()
-    {
-        return resources[current_frame_index];
-    }
-
-    DX12_Descriptor* DX12_Swap_Chain::get_current_rtv()
-    {
-        return rtvs + current_frame_index;
     }
 
     ENGINE_API DX12_Resource* dx12_alloc_resource(DX12_Device* device, DX12_Resource_Desc desc)
@@ -605,9 +627,9 @@ namespace Engine
 
         if (ok) {
             result = new DX12_Resource;
-            result->desc = desc;
+            result->desc            = desc;
             result->native_resource = resource;
-            resource->SetName(std::wstring(desc.name.begin(), desc.name.end()).c_str());
+            result->current_state   = init_state;
         }
 
         return result;
@@ -618,6 +640,51 @@ namespace Engine
         if (resource) {
             if (resource->native_resource) { resource->native_resource->Release(); }
         }
+    }
+
+    ENGINE_API DX12_Resource dx12_resource_from_native_resource(ID3D12Resource* resource, D3D12_RESOURCE_STATES current_state)
+    {
+        auto desc = resource->GetDesc();
+        D3D12_HEAP_PROPERTIES heap_prop;
+        D3D12_HEAP_FLAGS heap_flags;
+        resource->GetHeapProperties(&heap_prop, &heap_flags);
+
+        DX12_Resource_Type type = DX12_RESOURCE_TYPE_INVALID;
+
+        if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+            type = DX12_RESOURCE_TYPE_BUFFER;
+        } else if (desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D) {
+            type = DX12_RESOURCE_TYPE_TEXTURE_2D;
+        } else {
+            assert(0);
+        }
+
+        DX12_Resource result = {};
+        {
+            result.desc.type              = type;
+            result.desc.heap_type         = heap_prop.Type;
+            result.desc.cpu_page_property = heap_prop.CPUPageProperty;
+            result.desc.heap_flags        = heap_flags;
+            result.desc.resource_flags    = desc.Flags;
+
+            result.native_resource = resource;
+            result.current_state   = current_state;
+        }
+
+        if (type == DX12_RESOURCE_TYPE_BUFFER) {
+            result.desc.buffer.size = desc.Width;
+        } else if (type == DX12_RESOURCE_TYPE_TEXTURE_2D) {
+            result.desc.texture.format      = desc.Format;
+            result.desc.texture.width       = desc.Width;
+            result.desc.texture.height      = desc.Height;
+            result.desc.texture.mip_levels  = desc.MipLevels;
+            result.desc.texture.depth       = desc.DepthOrArraySize;
+            result.desc.texture.num_samples = desc.SampleDesc.Count;
+        } else {
+            assert(0);
+        }
+
+        return result;
     }
 
     ENGINE_API ID3D12RootSignature* dx12_create_bindless_root_signature(DX12_Device* device)
@@ -815,13 +882,13 @@ namespace Engine
 
         cmd_list->begin();
         {
-            cmd_list->transition_barrier(resource->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
-            cmd_list->transition_barrier(upload_buffer->native_resource, 0, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            cmd_list->transition_barrier(resource, 0, D3D12_RESOURCE_STATE_COPY_DEST);
+            cmd_list->transition_barrier(upload_buffer, 0, D3D12_RESOURCE_STATE_COPY_SOURCE);
 
             cmd_list->native_cmd_list->CopyBufferRegion(resource->native_resource, 0, upload_buffer->native_resource, 0, size);
 
-            cmd_list->transition_barrier(resource->native_resource, 0, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
-            cmd_list->transition_barrier(upload_buffer->native_resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
+            cmd_list->transition_barrier(resource, 0, D3D12_RESOURCE_STATE_COMMON);
+            cmd_list->transition_barrier(upload_buffer, 0, D3D12_RESOURCE_STATE_COMMON);
         }
         cmd_list->end();
 

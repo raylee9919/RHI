@@ -86,10 +86,10 @@ PS_Output ps_main(PS_Input input)
     float3 n;
     uint normal_id = material.normal_id;
     if (normal_id == 0xffffffff) {
-        n = input.normal;
+        n = normalize( input.normal ); // for safety
     } else {
         Texture2D normal_tex = ResourceDescriptorHeap[normal_id];
-        float3 normal_texel = normal_tex.Sample(anisotropic_sampler, input.uv).xyz * 2.0 - 1.0;
+        float3 normal_texel = normalize( normal_tex.Sample(anisotropic_sampler, input.uv).xyz * 2.0 - 1.0 ); // ditto
         n = mul(normal_texel, TBN);
     }
 

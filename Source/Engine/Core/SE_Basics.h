@@ -132,6 +132,8 @@ namespace Engine
     static const f32 F32_MAX = 3.402823e+38f;
     static const f32 F32_MIN = -3.402823e+38f;
 
+    template<typename T>
+    using Array = std::vector<T>;
     
     template<typename T>
     using Stack = std::stack<T>;

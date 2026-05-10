@@ -15,6 +15,10 @@ namespace Engine
         f32 x, y;
     };
 
+    struct ENGINE_API vec2u {
+        u32 x, y;
+    };
+
     struct ENGINE_API vec3
     {
         f32 x, y, z;

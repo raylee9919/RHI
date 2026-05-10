@@ -31,7 +31,7 @@ namespace Engine
 
         struct ENGINE_API Reflection {
             ID3D12ShaderReflection* reflection;
-            D3D12_SHADER_DESC shader_desc;
+            D3D12_SHADER_DESC       shader_desc;
 
             void release();
 

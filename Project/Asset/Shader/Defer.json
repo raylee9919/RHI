@@ -1,0 +1,9 @@
+{
+    "name": "Defer",
+    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader/HLSL/Defer.shader",
+    "cull" : "none",
+    "render_targets" : [
+        "R8G8B8A8_UNORM"
+    ],
+    "depth_format" : "none"
+}

@@ -14,8 +14,12 @@
 #endif
 
 
+#define DX12_MAX_NUM_FRAMES 3
+
 namespace Engine
 {
+    struct DX12_Resource;
+
     struct DX12_Device {
         ID3D12Device10* native_device;
         IDXGIFactory6*  factory;
@@ -82,7 +86,7 @@ namespace Engine
         void end();
         void clear_rtv(DX12_Descriptor* descriptor, float r, float g, float b, float a);
         void clear_dsv(DX12_Descriptor* descriptor, float depth, int top_left_x, int top_left_y, int width, int height);
-        void transition_barrier(ID3D12Resource* resource, uint32_t subresource, D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
+        void transition_barrier(DX12_Resource* resource, uint32_t subresource, D3D12_RESOURCE_STATES after);
         void set_pipeline_state(DX12_Pipeline_State* state);
         void set_resource_and_sampler_heap(DX12_Descriptor_Heap* resource_heap, DX12_Descriptor_Heap* sampler_heap);
         void set_graphics_root_signature(ID3D12RootSignature* root_signature);
@@ -90,8 +94,8 @@ namespace Engine
         void set_viewport(int top_left_x, int top_left_y, int width, int height);
         void set_scissor(int top_left_x, int top_left_y, int width, int height);
         void set_topology(D3D12_PRIMITIVE_TOPOLOGY topology);
-        void set_render_target(u32 num_rtvs, DX12_Descriptor** rtvs, DX12_Descriptor* dsv);
-        void set_index_buffer(struct DX12_Resource* resource);
+        void set_render_target(u32 num_rtvs, DX12_Descriptor* rtvs, DX12_Descriptor* dsv);
+        void set_index_buffer(DX12_Resource* resource);
 
         void draw(u32 num_vertices, u32 num_instances, u32 begin_vertex = 0, u32 begin_instance = 0);
         void draw_indexed(u32 num_indices_per_instance, u32 num_instances, u32 start_index = 0, int base_vertex = 0, u32 start_instance = 0);
@@ -100,20 +104,6 @@ namespace Engine
     struct DX12_Command_Queue {
         ID3D12CommandQueue* native_cmd_queue;
     };
-
-    struct ENGINE_API DX12_Swap_Chain {
-        IDXGISwapChain3* native_swap_chain;
-        uint32_t         num_frames;
-        uint32_t         current_frame_index;
-
-        ID3D12Resource** resources;
-        DX12_Descriptor* rtvs;
-
-        void present();
-        ID3D12Resource* get_current_resource();
-        DX12_Descriptor* get_current_rtv();
-    };
-
 
     enum DX12_Resource_Type : int8_t {
         DX12_RESOURCE_TYPE_INVALID = -1,
@@ -150,18 +140,38 @@ namespace Engine
             DX12_Resource_Desc_Buffer  buffer;
             DX12_Resource_Desc_Texture texture;
         };
-
-        String name = "";
     };
 
     struct DX12_Resource {
-        DX12_Resource_Desc desc;
-        ID3D12Resource*    native_resource;
+        DX12_Resource_Desc    desc;
+        ID3D12Resource*       native_resource;
+        D3D12_RESOURCE_STATES current_state;
+    };
+
+    struct ENGINE_API DX12_Swap_Chain {
+        IDXGISwapChain3* native_swap_chain;
+        u32              num_frames;
+        u32              current_frame_index;
+        DX12_Resource*   resources;
+        DX12_Descriptor* rtvs;
+
+        FORCE_INLINE void present() {
+            UINT sync_interval = 0;
+            native_swap_chain->Present(sync_interval, 0); // @Temporary: flags?
+            current_frame_index = native_swap_chain->GetCurrentBackBufferIndex();
+        }
+
+        FORCE_INLINE DX12_Resource* get_current_resource() {
+            return resources + current_frame_index;
+        }
+
+        FORCE_INLINE DX12_Descriptor get_current_rtv() {
+            return rtvs[current_frame_index];
+        }
     };
 
 
-
-
+    ENGINE_API DXGI_FORMAT dxgi_format_from_component_type_and_mask(D3D_REGISTER_COMPONENT_TYPE type, BYTE mask);
 
     ENGINE_API DX12_Device* dx12_create_device();
     ENGINE_API void dx12_destroy_device(DX12_Device* device);
@@ -191,6 +201,7 @@ namespace Engine
 
     ENGINE_API DX12_Resource* dx12_alloc_resource(DX12_Device* device, DX12_Resource_Desc desc);
     ENGINE_API void dx12_dealloc_resource(DX12_Resource* resource);
+    ENGINE_API DX12_Resource dx12_resource_from_native_resource(ID3D12Resource* resource, D3D12_RESOURCE_STATES current_state);
 
     ENGINE_API ID3D12RootSignature* dx12_create_bindless_root_signature(DX12_Device* device);
 

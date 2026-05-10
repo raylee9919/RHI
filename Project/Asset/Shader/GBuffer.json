@@ -1,0 +1,12 @@
+{
+    "name": "GBuffer",
+    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader/HLSL/GBuffer.shader",
+    "cull" : "back",
+    "render_targets" : [
+        "R32G32B32A32_FLOAT",
+        "R8G8B8A8_UNORM",
+        "R32G32_FLOAT",
+        "R32_UINT"
+    ],
+    "depth_format" : "D24S8"
+}
