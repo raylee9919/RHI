@@ -160,5 +160,8 @@ float4 ps_main(PS_Input input) : SV_TARGET
         result += compute_irradiance(lights[i], camera, position, n, albedo, roughness, metallic);
     }
 
+    // @Todo: Correct gamma correction
+    result = pow(result, 1.0 / 2.2);
+
     return float4(result, 1.0);
 }

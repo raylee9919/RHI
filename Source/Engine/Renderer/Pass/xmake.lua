@@ -7,3 +7,5 @@ target("Pass")
     add_includedirs(".", { public = true })
     add_headerfiles("*.h")
     add_files("*.cpp")
+
+    add_deps("DearIMGUI")

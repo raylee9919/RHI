@@ -17,8 +17,14 @@
 #include "Renderer/Pass/Pass_Defer.h"
 #include "Renderer/Pass/Pass_Blit.h"
 
+#include "ThirdParty/DearIMGUI/imgui.h"
+#include "ThirdParty/DearIMGUI/imgui_impl_sdl3.h"
+#include "ThirdParty/DearIMGUI/imgui_impl_dx12.h"
+
 using namespace Engine;
 using namespace DXIL;
+
+static DX12_Descriptor_Heap* g_imgui_srv_heap;
 
 // Sync with shader!
 struct Shader_Camera {
@@ -542,6 +548,8 @@ Shader_Asset shader_asset_from_file(const String& file_path) {
         has_depth = false;
     } else if (depth_format == "D24S8") {
         depth = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    } else if (depth_format == "D32") {
+        depth = DXGI_FORMAT_D32_FLOAT;
     } else {
         CORE_ASSERT(0);
     }
@@ -572,6 +580,9 @@ void deinit_pipeline_state(DX12_Pipeline_State* pso) {
     }
 }
 
+#define WIDTH  2560
+#define HEIGHT 1440
+
 int main()
 {
     Asset_State* asset_state = new Asset_State;
@@ -585,8 +596,8 @@ int main()
 
     // Create a window.
     String title = "This is a window";
-    int window_width  = 1920;
-    int window_height = 1080;
+    int window_width  = WIDTH;
+    int window_height = HEIGHT;
     Window* window = create_window(title, window_width, window_height);
 
     // Resource state
@@ -609,13 +620,14 @@ int main()
 
     auto* rtv_heap     = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV,          32);
     auto* dsv_heap     = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV,          32);
-    auto* res_heap     = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 512);
+    auto* srv_heap     = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 512);
     auto* sampler_heap = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,      32);
 
-    u32 tex_width  = 2560;
-    u32 tex_height = 1440;
+    u32 tex_width  = WIDTH;
+    u32 tex_height = HEIGHT;
     u32 num_frames = 3;
-    auto* swap_chain = dx12_create_swap_chain(device, cmd_queue, rtv_heap, (HWND)window->get_platform_window(), tex_width, tex_height, num_frames);
+    HWND hwnd = (HWND)window->get_platform_window();
+    auto* swap_chain = dx12_create_swap_chain(device, cmd_queue, rtv_heap, hwnd, tex_width, tex_height, num_frames);
 
     auto* bindless_root_signature = dx12_create_bindless_root_signature(device);
 
@@ -632,12 +644,12 @@ int main()
     auto& json_array = loaded_sponza.materials;
 
     for (const auto& json : json_array) {
-        Material mat = material_from_json(device, cmd_queue, cmd_list, fence, res_heap, json);
+        Material mat = material_from_json(device, cmd_queue, cmd_list, fence, srv_heap, json);
         resource_state->alloc_material(mat);
     }
 
     // Alloc mesh resources.
-    auto res = alloc_mesh_resource(device, cmd_queue, cmd_list, fence, res_heap, loaded_sponza.meshes[0]);
+    auto res = alloc_mesh_resource(device, cmd_queue, cmd_list, fence, srv_heap, loaded_sponza.meshes[0]);
     resource_state->meshes[res.name] = res;
 
     // @Temporary: Hard coding a name for now.
@@ -661,7 +673,7 @@ int main()
 
     Shader_Camera shader_camera = get_shader_camera(&camera);
     auto* camera_resource = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .buffer = { .size = (u32)sizeof(shader_camera) } });
-    auto camera_srv = dx12_alloc_descriptor(res_heap);
+    auto camera_srv = dx12_alloc_descriptor(srv_heap);
     dx12_create_srv(device, camera_resource, &camera_srv, 1, (u32)sizeof(shader_camera));
 
     // @Temporary: Create linear sampler.
@@ -720,17 +732,15 @@ int main()
 
     // Make pass resources
     //
-    auto* gbuffer_position_resource = create_pass_resource(device, res_heap, rtv_heap, nullptr,  DXGI_FORMAT_R32G32B32A32_FLOAT, tex_width, tex_height);
-    auto* gbuffer_normal_resource   = create_pass_resource(device, res_heap, rtv_heap, nullptr,      DXGI_FORMAT_R8G8B8A8_SNORM, tex_width, tex_height);
-    auto* gbuffer_uv_resource       = create_pass_resource(device, res_heap, rtv_heap, nullptr,        DXGI_FORMAT_R32G32_FLOAT, tex_width, tex_height);
-    auto* gbuffer_material_resource = create_pass_resource(device, res_heap, rtv_heap, nullptr,            DXGI_FORMAT_R32_UINT, tex_width, tex_height);
-    auto* gbuffer_depth             = create_pass_resource(device, nullptr, nullptr,  dsv_heap,   DXGI_FORMAT_D24_UNORM_S8_UINT, tex_width, tex_height);
-    auto* defer_resource            = create_pass_resource(device, res_heap, rtv_heap, nullptr,      DXGI_FORMAT_R8G8B8A8_UNORM, tex_width, tex_height);
-    auto* blit_output_resource      = create_pass_resource(device, res_heap, rtv_heap, nullptr, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, tex_width, tex_height);
+    auto* gbuffer_position_resource = create_pass_resource(device, srv_heap, rtv_heap, nullptr,  DXGI_FORMAT_R32G32B32A32_FLOAT, tex_width, tex_height);
+    auto* gbuffer_normal_resource   = create_pass_resource(device, srv_heap, rtv_heap, nullptr,      DXGI_FORMAT_R8G8B8A8_SNORM, tex_width, tex_height);
+    auto* gbuffer_uv_resource       = create_pass_resource(device, srv_heap, rtv_heap, nullptr,        DXGI_FORMAT_R32G32_FLOAT, tex_width, tex_height);
+    auto* gbuffer_material_resource = create_pass_resource(device, srv_heap, rtv_heap, nullptr,            DXGI_FORMAT_R32_UINT, tex_width, tex_height);
+    auto* gbuffer_depth             = create_pass_resource(device, nullptr, nullptr,  dsv_heap,           DXGI_FORMAT_D32_FLOAT, tex_width, tex_height);
+    auto* defer_resource            = create_pass_resource(device, srv_heap, rtv_heap, nullptr,      DXGI_FORMAT_R8G8B8A8_UNORM, tex_width, tex_height);
+    auto* blit_output_resource      = create_pass_resource(device, srv_heap, rtv_heap, nullptr,      DXGI_FORMAT_R8G8B8A8_UNORM, tex_width, tex_height);
 
 
-    // Gbuffer
-    //
     auto* gbuffer_pass = new GBuffer_Pass;
     {
         gbuffer_pass->pipeline_state  = shader_table["GBuffer"];
@@ -747,8 +757,6 @@ int main()
         gbuffer_pass->depth_target = gbuffer_depth;
     }
 
-    // Defer
-    //
     auto* defer_pass = new Defer_Pass;
     {
         defer_pass->pipeline_state  = shader_table["Defer"];
@@ -765,8 +773,6 @@ int main()
         defer_pass->outputs.push_back(defer_resource);
     }
 
-    // Blit
-    //
     auto* blit_pass = new Blit_Pass;
     {
         blit_pass->pipeline_state = shader_table["Blit"];
@@ -784,7 +790,50 @@ int main()
     // frame resource. I think the system should manage the final connection thing.
 
 
+    
 
+
+    // UI
+    //
+    g_imgui_srv_heap = srv_heap;
+    float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+  
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+
+    // Setup scaling
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
+    style.FontScaleDpi = main_scale;        // Set initial font scale. (in docking branch: using io.ConfigDpiScaleFonts=true automatically overrides this for every window depending on the current monitor)
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplSDL3_InitForD3D(window->sdl);
+    ImGui_ImplDX12_InitInfo init_info = {};
+    {
+        init_info.Device               = device->native_device;
+        init_info.CommandQueue         = cmd_queue->native_cmd_queue;
+        init_info.NumFramesInFlight    = swap_chain->num_frames;
+        init_info.RTVFormat            = DXGI_FORMAT_R8G8B8A8_UNORM;
+        init_info.DSVFormat            = DXGI_FORMAT_UNKNOWN;
+        // Allocating SRV descriptors (for textures) is up to the application, so we provide callbacks.
+        // (current version of the backend will only allocate one descriptor, future versions will need to allocate more)
+        init_info.SrvDescriptorHeap    = g_imgui_srv_heap->native_heap;
+        init_info.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo*, D3D12_CPU_DESCRIPTOR_HANDLE* out_cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE* out_gpu_handle) {
+            auto desc = dx12_alloc_descriptor(g_imgui_srv_heap);
+            *out_cpu_handle = desc.cpu_handle;
+            *out_gpu_handle = desc.gpu_handle;
+        };
+        init_info.SrvDescriptorFreeFn  = [](ImGui_ImplDX12_InitInfo*, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle) {
+            // @Todo: Callbacks...
+        };
+    }
+    ImGui_ImplDX12_Init(&init_info);
 
 
 
@@ -794,6 +843,20 @@ int main()
     //
     while (window->is_running) {
         window->poll_events();
+
+        // @Temporary: GUI
+        //
+        {
+            ImGui_ImplDX12_NewFrame();
+            ImGui_ImplSDL3_NewFrame();
+            ImGui::NewFrame();
+            {
+                ImGui::Begin("Panel");
+                ImGui::Text("%.3f mspf (%.1f fps)", 1000.0f / io.Framerate, io.Framerate);
+                ImGui::End();
+            }
+            ImGui::Render(); // generates draw data, still CPU-side
+        }
 
         // Update
         f32 time_elapsed = 0.017f;
@@ -810,7 +873,7 @@ int main()
 
         cmd_list->begin();
         {
-            cmd_list->set_resource_and_sampler_heap(res_heap, sampler_heap);
+            cmd_list->set_resource_and_sampler_heap(srv_heap, sampler_heap);
             cmd_list->set_graphics_root_signature(bindless_root_signature);
 
 
@@ -826,7 +889,6 @@ int main()
                 gbuffer_pass->draw(cmd_list, &param);
             }
 
-
             {
                 Defer_Pass::Draw_Data param = {
                     .camera_id              = camera_srv.index,
@@ -837,7 +899,7 @@ int main()
                 defer_pass->draw(cmd_list, &param);
             }
 
-
+            cmd_list->set_graphics_root_signature(bindless_root_signature);
             {
                 Blit_Pass::Draw_Data param = {
                     .linear_sampler_id = linear_sampler_descriptor.index
@@ -845,6 +907,9 @@ int main()
                 blit_pass->begin(cmd_list);
                 blit_pass->draw(cmd_list, &param);
             }
+
+            
+            ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd_list->native_cmd_list);
 
 
             cmd_list->transition_barrier(blit_output_resource->resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE);

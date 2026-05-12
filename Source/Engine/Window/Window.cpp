@@ -5,6 +5,10 @@
 
 #include <SDL3/SDL.h>
 
+#include "ThirdParty/DearIMGUI/imgui.h"
+#include "ThirdParty/DearIMGUI/imgui_impl_sdl3.h"
+#include "ThirdParty/DearIMGUI/imgui_impl_dx12.h"
+
 namespace Engine
 {
     ENGINE_API Window* create_window(String title, int width, int height)
@@ -49,25 +53,34 @@ namespace Engine
         // Poll events
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            // @Temporary:
+            ImGui_ImplSDL3_ProcessEvent(&event);
+
             // Quit
             if (event.type == SDL_EVENT_QUIT) { is_running = false; }
 
-            // Keyboard
-            if (event.type == SDL_EVENT_KEY_DOWN) {
-                Key key = KeyFromSDL(event.key.key);
-                my_input_system->key_is_down[key] = true;
+            ImGuiIO& io = ImGui::GetIO();
+
+            if (!io.WantCaptureKeyboard) {
+                if (event.type == SDL_EVENT_KEY_DOWN) {
+                    my_input_system->key_is_down[KeyFromSDL(event.key.key)] = true;
+                }
+                if (event.type == SDL_EVENT_KEY_UP) {
+                    my_input_system->key_is_down[KeyFromSDL(event.key.key)] = false;
+                }
             }
 
-            if (event.type == SDL_EVENT_KEY_UP) {
-                Key key = KeyFromSDL(event.key.key);
-                my_input_system->key_is_down[key] = false;
+            if (!io.WantCaptureMouse) {
+                SDL_MouseButtonFlags flags = SDL_GetMouseState(&my_input_system->current_mouse_x, &my_input_system->current_mouse_y);
+                my_input_system->mouse_is_down[MOUSE_LEFT]   = (flags & SDL_BUTTON_MASK(SDL_BUTTON_LEFT));
+                my_input_system->mouse_is_down[MOUSE_RIGHT]  = (flags & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT));
+                my_input_system->mouse_is_down[MOUSE_MIDDLE] = (flags & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE));
+            } else {
+                // Clear mouse state so camera doesn't keep moving when ImGui takes over
+                my_input_system->mouse_is_down[MOUSE_LEFT]   = false;
+                my_input_system->mouse_is_down[MOUSE_RIGHT]  = false;
+                my_input_system->mouse_is_down[MOUSE_MIDDLE] = false;
             }
-
-            // Mouse
-            SDL_MouseButtonFlags flags = SDL_GetMouseState(&my_input_system->current_mouse_x, &my_input_system->current_mouse_y);
-            my_input_system->mouse_is_down[MOUSE_LEFT]   = (flags & SDL_BUTTON_MASK(SDL_BUTTON_LEFT));
-            my_input_system->mouse_is_down[MOUSE_RIGHT]  = (flags & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT));
-            my_input_system->mouse_is_down[MOUSE_MIDDLE] = (flags & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE));
         }
     }
 }

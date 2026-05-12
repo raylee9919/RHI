@@ -1,10 +1,10 @@
 -- Copyright Seong Woo Lee. All Rights Reserved.
 
-target("Window")
+target("DearIMGUI")
     set_kind("object")
-    set_group("Engine")
+    set_group("ThirdParty")
 
     add_headerfiles("*.h")
     add_files("*.cpp")
 
-    add_deps("SDL3", "DearIMGUI")
+    add_deps("SDL3")

@@ -460,7 +460,7 @@ namespace Engine
 
     void DX12_Command_List::set_pipeline_state(DX12_Pipeline_State* state)
     {
-        native_cmd_list->SetPipelineState(state->pso);
+        if (state) { native_cmd_list->SetPipelineState(state->pso); }
     }
 
     void DX12_Command_List::set_resource_and_sampler_heap(DX12_Descriptor_Heap* resource_heap, DX12_Descriptor_Heap* sampler_heap)

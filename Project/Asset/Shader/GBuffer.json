@@ -8,5 +8,5 @@
         "R32G32_FLOAT",
         "R32_UINT"
     ],
-    "depth_format" : "D24S8"
+    "depth_format" : "D32"
 }
