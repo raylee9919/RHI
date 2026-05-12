@@ -1,6 +1,6 @@
 -- Copyright Seong Woo Lee. All Rights Reserved.
 
-includes("DX12")
+includes("DX12", "VK")
 
 target("RHI")
     set_kind("object")
@@ -9,5 +9,5 @@ target("RHI")
     add_includedirs(".", { public = true })
     add_headerfiles("*.h")
     --add_files("*.cpp")
-    
-    add_deps("DX12")
+
+    add_deps("DX12", "VK")

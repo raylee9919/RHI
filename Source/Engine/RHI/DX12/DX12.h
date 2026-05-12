@@ -173,20 +173,20 @@ namespace Engine
 
     ENGINE_API DXGI_FORMAT dxgi_format_from_component_type_and_mask(D3D_REGISTER_COMPONENT_TYPE type, BYTE mask);
 
-    ENGINE_API DX12_Device* dx12_create_device();
-    ENGINE_API void dx12_destroy_device(DX12_Device* device);
+    [[nodiscard]] ENGINE_API bool dx12_init_device(DX12_Device* device, bool use_debug_layer);
+    [[nodiscard]] ENGINE_API bool dx12_deinit_device(DX12_Device* device);
 
     ENGINE_API DX12_Swap_Chain* dx12_create_swap_chain(DX12_Device* device, DX12_Command_Queue* cmd_queue, DX12_Descriptor_Heap* rtv_heap, HWND hwnd, u32 width, u32 height, u32 num_frames);
     ENGINE_API void dx12_destroy_swap_chain(DX12_Swap_Chain* swap_chain);
 
-    ENGINE_API DX12_Command_Queue* dx12_create_command_queue(DX12_Device* device, D3D12_COMMAND_LIST_TYPE type);
-    ENGINE_API void dx12_destroy_command_queue(DX12_Command_Queue* cmd_queue);
+    [[nodiscard]] ENGINE_API bool dx12_init_command_queue(DX12_Device* device, DX12_Command_Queue* cmd_queue, D3D12_COMMAND_LIST_TYPE type);
+    [[nodiscard]] ENGINE_API bool dx12_deinit_command_queue(DX12_Command_Queue* cmd_queue);
 
-    ENGINE_API DX12_Command_List* dx12_create_command_list(DX12_Device* device, D3D12_COMMAND_LIST_TYPE type);
-    ENGINE_API void dx12_destroy_command_list(DX12_Command_List* cmd_list);
+    [[nodiscard]] ENGINE_API bool dx12_init_command_list(DX12_Device* device, DX12_Command_List* cmd_list, D3D12_COMMAND_LIST_TYPE type);
+    [[nodiscard]] ENGINE_API bool dx12_deinit_command_list(DX12_Command_List* cmd_list);
 
-    ENGINE_API DX12_Fence* dx12_create_fence(DX12_Device* device);
-    ENGINE_API void dx12_destroy_fence(DX12_Fence* fence);
+    [[nodiscard]] ENGINE_API bool dx12_init_fence(DX12_Device* device, DX12_Fence* fence);
+    [[nodiscard]] ENGINE_API bool dx12_deinit_fence(DX12_Fence* fence);
 
     ENGINE_API DX12_Descriptor_Heap* dx12_create_descriptor_heap(DX12_Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 max_descriptors);
     ENGINE_API void dx12_destroy_descriptor_heap(DX12_Descriptor_Heap* heap);

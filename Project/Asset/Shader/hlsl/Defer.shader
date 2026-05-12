@@ -3,6 +3,16 @@
 #define PI 3.14159265
 #define PUSH_CONSTANTS(Type, Name) ConstantBuffer<Type> Name : register(b0)
 
+struct PS_Input {
+    float4 sv_position : SV_POSITION;
+    float2 screen_uv   : TEXCOORD0;
+};
+
+struct Point_Light {
+    float3 position;
+    float3 radiance;
+};
+
 struct Material {
     uint albedo_id;
     uint normal_id;
@@ -15,11 +25,6 @@ struct Camera {
     float4x4 proj;
     float4x4 view_proj;
     float4   position;
-};
-
-struct PS_Input {
-    float4 sv_position : SV_POSITION;
-    float2 screen_uv   : TEXCOORD0;
 };
 
 struct Push_Constants {
@@ -54,6 +59,33 @@ float smith_g1(float c, float roughness) {
 
 float smith_ggx(float ndotl, float ndotv, float roughness) {
     return smith_g1(ndotl, roughness) * smith_g1(ndotv, roughness);
+}
+
+float3 compute_irradiance(Point_Light light, Camera camera, float3 position, float3 normal,
+                          float3 albedo, float roughness, float metallic) {
+    float3 n = normal; // alias
+    float3 l = normalize(light.position - position);
+    float3 v = normalize(camera.position.xyz - position);
+    float3 h = normalize(l + v);
+    float ndotl = max(dot(n, l), 0.0001);
+    float ndotv = max(dot(n, v), 0.0001);
+    float ndoth = dot(n, h);
+    float vdoth = dot(v, h);
+    
+    float3 f0 = lerp(0.04, albedo, metallic);
+
+    float  D = trowbridge_reitz_ggx(roughness, ndoth);
+    float3 F = schlick_fresnel(f0, vdoth);
+    float  G = smith_ggx(ndotl, ndotv, roughness);
+    float3 kd = (1.0 - F) * (1.0 - metallic);
+    float3 diffuse = kd * albedo / PI;
+    float3 BRDF = diffuse + (D * F * G) / (4.0 * ndotl * ndotv);
+
+    float dist = distance(light.position, position);
+    float dist_falloff = 1.0 / (dist * dist);
+
+    float3 result = BRDF * ndotl * light.radiance * dist_falloff;
+    return result;
 }
 
 PS_Input vs_main(uint vertex_id : SV_VertexID)
@@ -115,30 +147,18 @@ float4 ps_main(PS_Input input) : SV_TARGET
     }
 
     // @Temporary: Debug light scene
-    float3 light_position = float3(-200.0, 500.0, 0.0);
-    float3 radiance = 300000.0;
+    Point_Light lights[2];
+    lights[0].position = float3(-200.0, 500.0, 0.0);
+    lights[0].radiance = 300000.0;
+    lights[1].position = float3( 500.0, 800.0, 0.0);
+    lights[1].radiance = float3(100000.0, 100000.0, 300000.0);
 
-    float3 l = normalize(light_position - position);
-    float3 v = normalize(camera.position.xyz - position);
-    float3 h = normalize(l + v);
-    float ndotl = max(dot(n, l), 0.0001);
-    float ndotv = max(dot(n, v), 0.0001);
-    float ndoth = dot(n, h);
-    float vdoth = dot(v, h);
-    
-    float3 f0 = lerp(0.04, albedo, metallic);
+    float3 result = 0.0;
 
-    float  D = trowbridge_reitz_ggx(roughness, ndoth);
-    float3 F = schlick_fresnel(f0, vdoth);
-    float  G = smith_ggx(ndotl, ndotv, roughness);
-    float3 kd = (1.0 - F) * (1.0 - metallic);
-    float3 diffuse = kd * albedo / PI;
-    float3 BRDF = diffuse + (D * F * G) / (4.0 * ndotl * ndotv);
-
-    float dist = distance(light_position, position);
-    float dist_falloff = 1.0 / (dist * dist);
-
-    float3 result = BRDF * ndotl * radiance * dist_falloff;
+    [unroll]
+    for (int i = 0; i < 2; ++i) {
+        result += compute_irradiance(lights[i], camera, position, n, albedo, roughness, metallic);
+    }
 
     return float4(result, 1.0);
 }

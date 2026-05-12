@@ -8,34 +8,17 @@
 #include "Window/Window.h"
 #include "File/FileSystem.h"
 #include "Asset/SE_Asset.h"
-#include "RHI/DX12/DX12.h"
+#include "RHI/RHI.h"
 #include "Shader/DXIL/DXIL_Compiler.h"
+#include "Renderer/Renderer.h"
+#include "Entity/Entity.h"
+
+#include "Renderer/Pass/Pass_GBuffer.h"
+#include "Renderer/Pass/Pass_Defer.h"
+#include "Renderer/Pass/Pass_Blit.h"
 
 using namespace Engine;
 using namespace DXIL;
-
-// Sync with shader!
-struct GBuffer_Push_Constants {
-    u32 vertex_buffer_id;
-    u32 material_id;
-    u32 camera_id;
-    u32 anisotropic_sampler_id;
-};
-
-struct Defer_Push_Constants {
-    u32 position_id;
-    u32 normal_id;
-    u32 uv_id;
-    u32 material_id;
-    u32 camera_id;
-    u32 linear_sampler_id;
-    u32 anisotropic_sampler_id;
-};
-
-struct Blit_Push_Constants {
-    u32 color_id;
-    u32 linear_sampler_id;
-};
 
 // Sync with shader!
 struct Shader_Camera {
@@ -117,65 +100,6 @@ Shader_Camera get_shader_camera(Camera* camera) {
     return result;
 }
 
-struct Entity {
-    String mesh_name;
-};
-
-struct Mesh_Slice_Resource {
-    DX12_Resource*  vertex_buffer;
-    DX12_Descriptor vertex_buffer_descriptor;
-    DX12_Resource*  index_buffer;
-
-    String material_name;
-
-    u32 num_vertices;
-    u32 num_indices;
-};
-
-struct Mesh_Resource {
-    String name;
-    Array <Mesh_Slice_Resource> slices;
-};
-
-struct Bitmap {
-    u32 width;
-    u32 height;
-    u32 pitch;
-    u8* data;
-};
-
-struct Resource_State {
-    Hash_Table <String, Material> materials;
-    Hash_Table <String, Mesh_Resource> meshes;
-
-    void alloc_material(Material m) { materials[m.name] = m; }
-    void clear()
-    {
-        Array <String> material_names;
-        for (auto& it : materials) {
-            dx12_dealloc_resource(it.second.resource);
-            dx12_dealloc_descriptor(it.second.srv);
-            for (auto* tex : it.second.resources) {
-                dx12_dealloc_resource(tex);
-            }
-            material_names.push_back(it.first);
-        }
-        for (String& name : material_names) { materials.erase(name); }
-
-
-        Array <String> mesh_names;
-        for (auto& mesh : meshes) {
-            for (auto& it : mesh.second.slices) {
-                dx12_dealloc_resource(it.vertex_buffer);
-                dx12_dealloc_descriptor(it.vertex_buffer_descriptor);
-                dx12_dealloc_resource(it.index_buffer);
-            }
-            mesh_names.push_back(mesh.first);
-        }
-        for (String& name : mesh_names) { meshes.erase(name); }
-    }
-};
-
 INTERNAL Mesh_Resource
 alloc_mesh_resource(DX12_Device* device, DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list, DX12_Fence* fence, DX12_Descriptor_Heap* srv_heap, Mesh* mesh)
 {
@@ -212,8 +136,8 @@ alloc_mesh_resource(DX12_Device* device, DX12_Command_Queue* cmd_queue, DX12_Com
             auto* index_buffer = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .heap_type = D3D12_HEAP_TYPE_DEFAULT, .buffer = { .size = size } });
             dx12_upload_buffer(device, cmd_queue, cmd_list, fence, index_buffer, slice->indices.data(), size);
 
-            slice_res.index_buffer = index_buffer;
-            slice_res.num_indices  = count;
+            slice_res.index_buffer.resource = index_buffer;
+            slice_res.index_buffer.num_indices  = count;
         }
 
         result.slices.push_back(slice_res);
@@ -222,13 +146,21 @@ alloc_mesh_resource(DX12_Device* device, DX12_Command_Queue* cmd_queue, DX12_Com
     return result;
 }
 
+
+struct Bitmap {
+    u32 width;
+    u32 height;
+    u32 pitch;
+    u8* data;
+};
+
 INTERNAL Array <Bitmap> load_image(const String& path, bool generate_mipmap)
 {
     Array <Bitmap> result = {};
 
     int x, y, forced_channels = 4;
     u8* image = stbi_load(path.c_str(), &x, &y, nullptr, forced_channels);
-    assert(image);
+    CORE_ASSERT(image);
 
     {
         Bitmap bitmap = {};
@@ -292,7 +224,7 @@ INTERNAL Array <Bitmap> load_image(const String& path, bool generate_mipmap)
     return result;
 }
 
-INTERNAL std::pair<DX12_Resource*, u32> alloc_resource_and_srv_and_return_id(DX12_Device* device, DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list, DX12_Fence* fence, DX12_Descriptor_Heap* srv_heap, const nlohmann::json& json, const String& key, DXGI_FORMAT format, bool mip, u32 default_id)
+INTERNAL std::pair <DX12_Resource*, u32> alloc_resource_and_srv_and_return_id(DX12_Device* device, DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list, DX12_Fence* fence, DX12_Descriptor_Heap* srv_heap, const nlohmann::json& json, const String& key, DXGI_FORMAT format, bool mip, u32 default_id)
 {
     std::pair<DX12_Resource*, u32> result = { nullptr, default_id };
     DX12_Resource* tex = nullptr;
@@ -442,12 +374,12 @@ void init_pipeline_state(DX12_Device* device, Shader_Compiler* compiler,
                          DXGI_FORMAT* rtv_formats, 
                          bool has_depth, DXGI_FORMAT dsv_format,
                          D3D12_CULL_MODE cull_mode,
-                         const String& path)
+                         const String& shader_path)
 {
     // read file.
-    u64 length = read_entire_file(path, nullptr);
+    u64 length = read_entire_file(shader_path, nullptr);
     u8* source = new u8[length];
-    read_entire_file(path, source);
+    read_entire_file(shader_path, source);
 
     // entries/profiles
     const char* vs_entry   = "vs_main";
@@ -461,6 +393,49 @@ void init_pipeline_state(DX12_Device* device, Shader_Compiler* compiler,
 
     auto compiled_ps   = compiler->compile(true, source, length, ps_entry, ps_profile);
     auto ps_reflection = compiler->reflect(compiled_ps.result);
+
+    // Generate reflected push constant header.
+    Array <std::pair<String, String>> type_and_name;
+    u32 num_constant_buffers = vs_reflection.shader_desc.ConstantBuffers;
+    CORE_ASSERT(num_constant_buffers <= 1);
+
+    auto* cbuf = ps_reflection.reflection->GetConstantBufferByIndex(0);
+
+    D3D12_SHADER_BUFFER_DESC cbuf_desc;
+    cbuf->GetDesc(&cbuf_desc);
+    CORE_ASSERT(!strcmp(cbuf_desc.Name, "push"));
+
+    for (u32 i = 0; i < cbuf_desc.Variables; ++i) {
+        auto* var = cbuf->GetVariableByIndex(i);
+
+        D3D12_SHADER_VARIABLE_DESC var_desc;
+        var->GetDesc(&var_desc);
+
+        auto* var_type = var->GetType();
+        D3D12_SHADER_TYPE_DESC var_type_desc;
+        var_type->GetDesc(&var_type_desc);
+
+        for (u32 m = 0; m < var_type_desc.Members; ++m) {
+            ID3D12ShaderReflectionType* member_type = var_type->GetMemberTypeByIndex(m);
+
+            D3D12_SHADER_TYPE_DESC member_type_desc;
+            member_type->GetDesc(&member_type_desc);
+
+            auto type = member_type_desc.Type;
+            const char* name = var_type->GetMemberTypeName(m);
+
+            std::pair<String, String> tn;
+            if (type == D3D_SVT_UINT) {
+                tn.first = "uint32_t";
+            } else {
+                CORE_ASSERT(!"Not implemented.");
+            }
+            tn.second = name;
+
+            type_and_name.push_back(tn);
+        }
+    }
+
 
     u32 num_input_elements = vs_reflection.shader_desc.InputParameters;
     u32 num_render_targets = ps_reflection.shader_desc.OutputParameters;
@@ -534,6 +509,8 @@ Shader_Asset shader_asset_from_file(const String& file_path) {
             format = DXGI_FORMAT_R32G32B32A32_FLOAT;
         } else if (str == "R8G8B8A8_UNORM") {
             format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        } else if (str == "R8G8B8A8_UNORM_SRGB") {
+            format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
         } else if (str == "R8G8B8A8_SNORM") {
             format = DXGI_FORMAT_R8G8B8A8_SNORM;
         } else if (str == "R32G32_FLOAT") {
@@ -598,15 +575,18 @@ void deinit_pipeline_state(DX12_Pipeline_State* pso) {
 int main()
 {
     Asset_State* asset_state = new Asset_State;
+
     file_sys::path project_dir  = "C:/dev/swl/RHI/Project";
     file_sys::path asset_dir    = project_dir / "Asset";
     file_sys::path material_dir = asset_dir / "Material";
     file_sys::path shader_dir   = asset_dir / "Shader";
 
+    file_sys::path generated_shader_header_dir = project_dir / "Generated" / "Shader";
+
     // Create a window.
     String title = "This is a window";
-    int window_width  = 2560;
-    int window_height = 1440;
+    int window_width  = 1920;
+    int window_height = 1080;
     Window* window = create_window(title, window_width, window_height);
 
     // Resource state
@@ -615,10 +595,17 @@ int main()
     Shader_Compiler* compiler = new Shader_Compiler;
     init_shader_compiler(compiler);
 
-    auto* device    = dx12_create_device();
-    auto* cmd_queue = dx12_create_command_queue(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
-    auto* cmd_list  = dx12_create_command_list(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
-    auto* fence     = dx12_create_fence(device);
+    auto* device = new DX12_Device;
+    assert(dx12_init_device(device, true));
+
+    auto* cmd_queue = new DX12_Command_Queue;
+    assert(dx12_init_command_queue(device, cmd_queue, D3D12_COMMAND_LIST_TYPE_DIRECT));
+
+    auto* cmd_list = new DX12_Command_List;
+    assert(dx12_init_command_list(device, cmd_list, D3D12_COMMAND_LIST_TYPE_DIRECT));
+
+    auto* fence = new DX12_Fence;
+    assert(dx12_init_fence(device, fence));
 
     auto* rtv_heap     = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV,          32);
     auto* dsv_heap     = dx12_create_descriptor_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV,          32);
@@ -676,7 +663,6 @@ int main()
     auto* camera_resource = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .buffer = { .size = (u32)sizeof(shader_camera) } });
     auto camera_srv = dx12_alloc_descriptor(res_heap);
     dx12_create_srv(device, camera_resource, &camera_srv, 1, (u32)sizeof(shader_camera));
-    u32 camera_id = camera_srv.index;
 
     // @Temporary: Create linear sampler.
     //
@@ -713,82 +699,8 @@ int main()
         device->native_device->CreateSampler(&desc, anisotropic_sampler_descriptor.cpu_handle);
     }
 
-    DXGI_FORMAT dsv_format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    auto* depth_texture_resource = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D,
-                                                       .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,
-                                                       .do_clear = true,
-                                                       .clear_value = { .Format = dsv_format, .DepthStencil = { .Depth = 1.0f, .Stencil = 0u }},
-                                                       .texture = { .format = dsv_format,
-                                                       .width = tex_width, .height = tex_height,
-                                                       .mip_levels = 1, .depth = 1, .num_samples = 1 } });
 
-    // Create DSV
-    auto dsv = dx12_alloc_descriptor(dsv_heap);
-    dx12_create_dsv(device, depth_texture_resource, &dsv, dsv_format);
-
-
-    // Gbuffer
-    //
-    auto gbuffer_position_format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-    auto* gbuffer_position = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
-                                                 .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-                                                 .texture = { .format = gbuffer_position_format, .width = tex_width, .height = tex_height,
-                                                 .mip_levels = 1, .depth = 1, .num_samples = 1 }, });
-    auto gbuffer_position_rtv = dx12_alloc_descriptor(rtv_heap);
-    dx12_create_rtv(device, gbuffer_position, &gbuffer_position_rtv, { .Format = gbuffer_position_format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
-    auto gbuffer_position_srv = dx12_alloc_descriptor(res_heap);
-    dx12_create_srv(device, gbuffer_position, &gbuffer_position_srv);
-
-    auto gbuffer_normal_format = DXGI_FORMAT_R8G8B8A8_SNORM;
-    auto* gbuffer_normal = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
-                                                 .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-                                                 .texture = { .format = gbuffer_normal_format, .width = tex_width, .height = tex_height,
-                                                 .mip_levels = 1, .depth = 1, .num_samples = 1 }, });
-    auto gbuffer_normal_rtv = dx12_alloc_descriptor(rtv_heap);
-    dx12_create_rtv(device, gbuffer_normal, &gbuffer_normal_rtv, { .Format = gbuffer_normal_format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
-    auto gbuffer_normal_srv = dx12_alloc_descriptor(res_heap);
-    dx12_create_srv(device, gbuffer_normal, &gbuffer_normal_srv);
-
-    auto gbuffer_uv_format = DXGI_FORMAT_R32G32_FLOAT;
-    auto* gbuffer_uv = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
-                                                 .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-                                                 .texture = { .format = gbuffer_uv_format, .width = tex_width, .height = tex_height,
-                                                 .mip_levels = 1, .depth = 1, .num_samples = 1 } });
-    auto gbuffer_uv_rtv = dx12_alloc_descriptor(rtv_heap);
-    dx12_create_rtv(device, gbuffer_uv, &gbuffer_uv_rtv, { .Format = gbuffer_uv_format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
-    auto gbuffer_uv_srv = dx12_alloc_descriptor(res_heap);
-    dx12_create_srv(device, gbuffer_uv, &gbuffer_uv_srv);
-
-    auto gbuffer_material_format = DXGI_FORMAT_R32_UINT;
-    auto* gbuffer_material = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
-                                                 .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-                                                 .texture = { .format = gbuffer_material_format, .width = tex_width, .height = tex_height,
-                                                 .mip_levels = 1, .depth = 1, .num_samples = 1 }, });
-    auto gbuffer_material_rtv = dx12_alloc_descriptor(rtv_heap);
-    dx12_create_rtv(device, gbuffer_material, &gbuffer_material_rtv, { .Format = gbuffer_material_format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
-    auto gbuffer_material_srv = dx12_alloc_descriptor(res_heap);
-    dx12_create_srv(device, gbuffer_material, &gbuffer_material_srv);
-
-    // Defer
-    //
-    auto defer_format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    auto* defer_texture = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
-                                              .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-                                              .texture = { .format = defer_format, .width = tex_width, .height = tex_height,
-                                              .mip_levels = 1, .depth = 1, .num_samples = 1}});
-    auto defer_rtv = dx12_alloc_descriptor(rtv_heap);
-    dx12_create_rtv(device, defer_texture, &defer_rtv, { .Format = defer_format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
-    auto defer_srv= dx12_alloc_descriptor(res_heap);
-    dx12_create_srv(device, defer_texture, &defer_srv);
-
-    // Blit
-    //
-    auto blit_format = swap_chain->get_current_resource()->desc.texture.format;
-    String blit_shader_path = (asset_dir / "Shader/HLSL/Blit.shader_language").string();
-
-
-
-    // Load shader meta data from disk.
+    // Load shader meta data assets from disk.
     //
     Hash_Table <String, DX12_Pipeline_State*> shader_table;
 
@@ -802,6 +714,74 @@ int main()
             shader_table[shader_asset.name] = shader;
         }
     }
+
+
+
+
+    // Make pass resources
+    //
+    auto* gbuffer_position_resource = create_pass_resource(device, res_heap, rtv_heap, nullptr,  DXGI_FORMAT_R32G32B32A32_FLOAT, tex_width, tex_height);
+    auto* gbuffer_normal_resource   = create_pass_resource(device, res_heap, rtv_heap, nullptr,      DXGI_FORMAT_R8G8B8A8_SNORM, tex_width, tex_height);
+    auto* gbuffer_uv_resource       = create_pass_resource(device, res_heap, rtv_heap, nullptr,        DXGI_FORMAT_R32G32_FLOAT, tex_width, tex_height);
+    auto* gbuffer_material_resource = create_pass_resource(device, res_heap, rtv_heap, nullptr,            DXGI_FORMAT_R32_UINT, tex_width, tex_height);
+    auto* gbuffer_depth             = create_pass_resource(device, nullptr, nullptr,  dsv_heap,   DXGI_FORMAT_D24_UNORM_S8_UINT, tex_width, tex_height);
+    auto* defer_resource            = create_pass_resource(device, res_heap, rtv_heap, nullptr,      DXGI_FORMAT_R8G8B8A8_UNORM, tex_width, tex_height);
+    auto* blit_output_resource      = create_pass_resource(device, res_heap, rtv_heap, nullptr, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, tex_width, tex_height);
+
+
+    // Gbuffer
+    //
+    auto* gbuffer_pass = new GBuffer_Pass;
+    {
+        gbuffer_pass->pipeline_state  = shader_table["GBuffer"];
+        gbuffer_pass->viewport_width  = tex_width;
+        gbuffer_pass->viewport_height = tex_height;
+        gbuffer_pass->scissor_width   = tex_width;
+        gbuffer_pass->scissor_height  = tex_height;
+        gbuffer_pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+        gbuffer_pass->outputs.push_back(gbuffer_position_resource);
+        gbuffer_pass->outputs.push_back(gbuffer_normal_resource);
+        gbuffer_pass->outputs.push_back(gbuffer_uv_resource);
+        gbuffer_pass->outputs.push_back(gbuffer_material_resource);
+        gbuffer_pass->depth_target = gbuffer_depth;
+    }
+
+    // Defer
+    //
+    auto* defer_pass = new Defer_Pass;
+    {
+        defer_pass->pipeline_state  = shader_table["Defer"];
+        defer_pass->viewport_width  = tex_width;
+        defer_pass->viewport_height = tex_height;
+        defer_pass->scissor_width   = tex_width;
+        defer_pass->scissor_height  = tex_height;
+        defer_pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+        defer_pass->inputs.push_back(gbuffer_position_resource);
+        defer_pass->inputs.push_back(gbuffer_normal_resource);
+        defer_pass->inputs.push_back(gbuffer_uv_resource);
+        defer_pass->inputs.push_back(gbuffer_material_resource);
+        defer_pass->outputs.push_back(defer_resource);
+    }
+
+    // Blit
+    //
+    auto* blit_pass = new Blit_Pass;
+    {
+        blit_pass->pipeline_state = shader_table["Blit"];
+        blit_pass->viewport_width  = tex_width;
+        blit_pass->viewport_height = tex_height;
+        blit_pass->scissor_width   = tex_width;
+        blit_pass->scissor_height  = tex_height;
+        blit_pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+        blit_pass->inputs.push_back(defer_resource);
+        blit_pass->outputs.push_back(blit_output_resource);
+    }
+    // @Todo:
+    // I'm implicitly connecting blit_output_resource to swap chain's current 
+    // frame resource. I think the system should manage the final connection thing.
 
 
 
@@ -826,128 +806,57 @@ int main()
         shader_camera = get_shader_camera(&camera);
         dx12_upload_buffer(device, cmd_queue, cmd_list, fence, camera_resource, &shader_camera, (u32)sizeof(shader_camera));
 
+
+
         cmd_list->begin();
         {
             cmd_list->set_resource_and_sampler_heap(res_heap, sampler_heap);
             cmd_list->set_graphics_root_signature(bindless_root_signature);
 
-            cmd_list->transition_barrier(depth_texture_resource, 0, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
             {
-                cmd_list->clear_dsv(&dsv, 1.0f, 0, 0, tex_width, tex_height);
-            }
-            cmd_list->transition_barrier(depth_texture_resource, 0, D3D12_RESOURCE_STATE_COMMON);
-
-
-
-
-            Array <GBuffer_Push_Constants> gbuffer_push_constants; 
-            auto mesh = resource_state->meshes[sponza->mesh_name];
-            for (auto& slice : mesh.slices) {
-                auto mat = resource_state->materials[slice.material_name];
-                GBuffer_Push_Constants push = {
-                    .vertex_buffer_id       = slice.vertex_buffer_descriptor.index,
-                    .material_id            = mat.id,
-                    .camera_id              = camera_id,
+                GBuffer_Pass::Draw_Data param = {
+                    .entity                 = sponza,
+                    .resource_state         = resource_state,
+                    .camera_id              = camera_srv.index,
                     .anisotropic_sampler_id = anisotropic_sampler_descriptor.index
                 };
-                gbuffer_push_constants.push_back(push);
+                gbuffer_pass->begin(cmd_list);
+                cmd_list->clear_dsv(&gbuffer_pass->depth_target->dsv, 1.0f, 0, 0, tex_width, tex_height); // @Todo: Fragile
+                gbuffer_pass->draw(cmd_list, &param);
             }
-            u32 push_constants_size = sizeof(GBuffer_Push_Constants);
 
 
-            auto* gbuffer_shader = shader_table["GBuffer"];
-            cmd_list->transition_barrier(gbuffer_position, 0, D3D12_RESOURCE_STATE_RENDER_TARGET);
-            cmd_list->transition_barrier(gbuffer_normal, 0, D3D12_RESOURCE_STATE_RENDER_TARGET);
-            cmd_list->transition_barrier(gbuffer_uv, 0, D3D12_RESOURCE_STATE_RENDER_TARGET);
-            cmd_list->transition_barrier(gbuffer_material, 0, D3D12_RESOURCE_STATE_RENDER_TARGET);
-            cmd_list->transition_barrier(depth_texture_resource, 0, D3D12_RESOURCE_STATE_DEPTH_WRITE);
             {
-                DX12_Descriptor rtvs[] = { gbuffer_position_rtv, gbuffer_normal_rtv, gbuffer_uv_rtv, gbuffer_material_rtv };
-                cmd_list->set_render_target(count_of(rtvs), rtvs, &dsv);
-                cmd_list->set_pipeline_state(gbuffer_shader);
-                cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                cmd_list->set_viewport(0, 0, tex_width, tex_height);
-                cmd_list->set_scissor(0, 0, tex_width, tex_height);
-
-                {
-                    Entity* e = sponza;
-                    auto mesh = resource_state->meshes[e->mesh_name];
-                    for (u32 i = 0; i < mesh.slices.size(); ++i) {
-                        auto& slice = mesh.slices[i];
-                        cmd_list->set_graphics_root_constants(0u, push_constants_size >> 2, &gbuffer_push_constants[i]);
-                        cmd_list->set_index_buffer(slice.index_buffer);
-                        cmd_list->draw_indexed(slice.num_indices, 1);
-                    }
-                }
+                Defer_Pass::Draw_Data param = {
+                    .camera_id              = camera_srv.index,
+                    .linear_sampler_id      = linear_sampler_descriptor.index,
+                    .anisotropic_sampler_id = anisotropic_sampler_descriptor.index,
+                };
+                defer_pass->begin(cmd_list);
+                defer_pass->draw(cmd_list, &param);
             }
-            cmd_list->transition_barrier(gbuffer_position, 0, D3D12_RESOURCE_STATE_COMMON);
-            cmd_list->transition_barrier(gbuffer_normal, 0, D3D12_RESOURCE_STATE_COMMON);
-            cmd_list->transition_barrier(gbuffer_uv, 0, D3D12_RESOURCE_STATE_COMMON);
-            cmd_list->transition_barrier(gbuffer_material, 0, D3D12_RESOURCE_STATE_COMMON);
-            cmd_list->transition_barrier(depth_texture_resource, 0, D3D12_RESOURCE_STATE_COMMON);
 
 
-
-            auto* defer_shader = shader_table["Defer"];
-            cmd_list->transition_barrier(defer_texture, 0, D3D12_RESOURCE_STATE_RENDER_TARGET);
             {
-                DX12_Descriptor rtvs[] = { defer_rtv };
-                cmd_list->set_render_target(count_of(rtvs), rtvs, &dsv);
-
-                cmd_list->set_pipeline_state(defer_shader);
-                cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                cmd_list->set_viewport(0, 0, tex_width, tex_height);
-                cmd_list->set_scissor(0, 0, tex_width, tex_height);
-
-                {
-                    Defer_Push_Constants push = {
-                        .position_id            = gbuffer_position_srv.index,
-                        .normal_id              = gbuffer_normal_srv.index,
-                        .uv_id                  = gbuffer_uv_srv.index,
-                        .material_id            = gbuffer_material_srv.index,
-                        .camera_id              = camera_srv.index,
-                        .linear_sampler_id      = linear_sampler_descriptor.index,
-                        .anisotropic_sampler_id = anisotropic_sampler_descriptor.index
-                    };
-
-                    cmd_list->set_graphics_root_constants(0u, sizeof(push) >> 2, &push);
-                    cmd_list->draw(3, 1);
-                }
+                Blit_Pass::Draw_Data param = {
+                    .linear_sampler_id = linear_sampler_descriptor.index
+                };
+                blit_pass->begin(cmd_list);
+                blit_pass->draw(cmd_list, &param);
             }
-            cmd_list->transition_barrier(defer_texture, 0, D3D12_RESOURCE_STATE_COMMON);
 
 
-
-            auto* blit_shader = shader_table["Blit"];
-            cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_RENDER_TARGET);
-            {
-                DX12_Descriptor rtvs[] = { swap_chain->get_current_rtv() };
-                cmd_list->set_render_target(count_of(rtvs), rtvs, &dsv);
-
-                cmd_list->set_pipeline_state(blit_shader);
-                cmd_list->set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                cmd_list->set_viewport(0, 0, tex_width, tex_height);
-                cmd_list->set_scissor(0, 0, tex_width, tex_height);
-
-                {
-                    Blit_Push_Constants push = {
-                        .color_id = defer_srv.index,
-                        .linear_sampler_id = linear_sampler_descriptor.index
-                    };
-
-                    cmd_list->set_graphics_root_constants(0u, sizeof(push) >> 2, &push);
-                    cmd_list->draw(3, 1);
-                }
-            }
-            cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_PRESENT);
+            cmd_list->transition_barrier(blit_output_resource->resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_COPY_DEST);
+            cmd_list->native_cmd_list->CopyResource(swap_chain->get_current_resource()->native_resource, blit_output_resource->resource->native_resource);
+            cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_COPY_SOURCE);
         }
+        cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_PRESENT);
         cmd_list->end();
-
         dx12_execute_command_list(cmd_queue, cmd_list);
-
         dx12_signal_fence(cmd_queue, fence);
         dx12_wait_fence(fence);
-
         swap_chain->present();
     }
 

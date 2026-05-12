@@ -129,18 +129,15 @@ namespace Engine
     ENGINE_API u64 read_entire_file(const String& path, void* buffer);
 
 
-    static const f32 F32_MAX = 3.402823e+38f;
-    static const f32 F32_MIN = -3.402823e+38f;
-
-    template<typename T>
+    template <typename T>
     using Array = std::vector<T>;
     
-    template<typename T>
+    template <typename T>
     using Stack = std::stack<T>;
 
-    template<typename T>
+    template <typename T>
     using Set = std::unordered_set<T>;
 
-    template<typename K, typename V>
+    template <typename K, typename V>
     using Hash_Table = std::unordered_map<K, V>;
 }

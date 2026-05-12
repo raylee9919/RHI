@@ -1,15 +1,9 @@
 -- Copyright Seong Woo Lee. All Rights Reserved.
 
-includes("Pass")
-
-target("Renderer")
+target("Pass")
     set_kind("object")
     set_group("Engine")
 
     add_includedirs(".", { public = true })
     add_headerfiles("*.h")
     add_files("*.cpp")
-
-    add_deps("Input");
-    add_deps("RHI");
-    add_deps("Pass");

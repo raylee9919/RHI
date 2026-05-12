@@ -64,6 +64,7 @@ namespace Engine
         Array <Mesh_Slice*> meshes;
     };
 
+
     struct GLTF_Load_Result {
         nlohmann::json materials; // array of materials jsons
         Array <Mesh*> meshes;

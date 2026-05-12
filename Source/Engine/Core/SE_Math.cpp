@@ -115,9 +115,10 @@ namespace Engine
 
     AABB AABB::RevInf()
     {
+        constexpr f32 float_max = 3.402823e+38f;
         AABB aabb;
-        aabb.min = vec3( F32_MAX);
-        aabb.max = vec3(-F32_MAX);
+        aabb.min = vec3( float_max);
+        aabb.max = vec3(-float_max);
         return aabb;
     }
 

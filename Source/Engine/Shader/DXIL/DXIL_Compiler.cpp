@@ -161,8 +161,8 @@ namespace Engine
             memcpy(result.bytecode, shader_obj->GetBufferPointer(), length);
 
             // Cleanup
-            if (error_msgs)     { error_msgs->Release(); }
-            if (shader_obj)     { shader_obj->Release(); }
+            if (error_msgs) error_msgs->Release();
+            if (shader_obj) shader_obj->Release();
 
             return result;
         }

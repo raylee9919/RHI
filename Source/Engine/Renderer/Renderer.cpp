@@ -2,89 +2,73 @@
 
 #include "Renderer.h"
 
-#include "Input/Input.h"
-
 namespace Engine
 {
-    namespace Render
+    void IPass::begin(DX12_Command_List* cmd_list)
     {
-        void Camera::Update(f32 dt, Input_System* input)
-        {
-            vec3 forward = vec3(0.f, 0.f, 1.f);
-            {
-                vec4 f = y_rotation(yaw) * x_rotation(pitch) * vec4(forward, 0.f);
-                //forward.x = cos(pitch) * cos(yaw);
-                //forward.y = sin(pitch);
-                //forward.z = cos(pitch) * sin(yaw);
-                forward = normalize(f.xyz);
-            }
+        // Set shader.
+        cmd_list->set_pipeline_state(pipeline_state);
 
-            vec3 right = cross(forward, vec3(0.f, 1.f, 0.f));
-
-            f32 move_speed = speed;
-            if (input->key_is_down[KEY_LEFT_SHIFT])
-            {
-                move_speed *= 3.0f;
-            }
-
-            f32 factor = dt * move_speed;
-
-            if (input->key_is_down[KEY_E])
-            {
-                position += ( vec4(0.f, 1.f, 0.f, 0.f) * factor );
-            }
-
-            if (input->key_is_down[KEY_Q])
-            {
-                position -= ( vec4(0.f, 1.f, 0.f, 0.f) * factor );
-            }
-
-            if (input->key_is_down[KEY_W])
-            {
-                position += ( vec4(forward, 0.f) * factor );
-            }
-
-            if (input->key_is_down[KEY_S])
-            {
-                position -= ( vec4(forward, 0.f) * factor );
-            }
-
-            if (input->key_is_down[KEY_D])
-            {
-                position += ( vec4(right, 0.f) * factor );
-            }
-
-            if (input->key_is_down[KEY_A])
-            {
-                position -= ( vec4(right, 0.f) * factor );
-            }
-
-            if (input->mouse_is_down[MOUSE_LEFT])
-            {
-                if (!input->mouse_was_down[MOUSE_LEFT])
-                {
-                    last_mouse_x = input->current_mouse_x;
-                    last_mouse_y = input->current_mouse_y;
-                }
-                else
-                {
-                    f32 dx = input->current_mouse_x - last_mouse_x;
-                    f32 dy = input->current_mouse_y - last_mouse_y;
-
-                    f32 rot_speed = 0.125f;
-                    yaw   += (rot_speed * dx * dt);
-                    pitch -= (rot_speed * dy * dt);
-                    yaw   = fmod(yaw, PI * 2.f);
-                    pitch = Clamp(pitch, -PI * 0.45f, PI * 0.45f);
-
-                    last_mouse_x = input->current_mouse_x;
-                    last_mouse_y = input->current_mouse_y;
-                }
-            }
-
-            view      = m4x4::look_to_lh(position.xyz, forward, vec3(0.f, 1.f, 0.f));
-            proj      = m4x4::perspective_lh(to_radian(fov), aspect_ratio, near_z, far_z);
-            view_proj = proj * view;
+        // Transition resources.
+        for (auto* res : inputs) {
+            cmd_list->transition_barrier(res->resource, 0, D3D12_RESOURCE_STATE_COMMON);
         }
+        for (auto* res : outputs) {
+            cmd_list->transition_barrier(res->resource, 0, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        }
+        if (depth_target) {
+            cmd_list->transition_barrier(depth_target->resource, 0, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+        }
+
+        // Set render targets.
+        Array <DX12_Descriptor> rtvs;
+        for (auto* res : outputs) {
+            rtvs.push_back(res->rtv);
+        }
+        DX12_Descriptor* dsv = depth_target ? &depth_target->dsv : nullptr;
+        cmd_list->set_render_target(rtvs.size(), rtvs.data(), dsv);
+
+        // Set viewport, scissor and topology.
+        cmd_list->set_viewport(0, 0, viewport_width, viewport_height);
+        cmd_list->set_scissor(0, 0, scissor_width, scissor_height);
+        cmd_list->set_topology(topology);
+    }
+
+    ENGINE_API Pass_Resource* create_pass_resource(DX12_Device* device, DX12_Descriptor_Heap* srv_heap, DX12_Descriptor_Heap* rtv_heap, DX12_Descriptor_Heap* dsv_heap, 
+                                                   DXGI_FORMAT format, u32 width, u32 height) 
+    {
+        Pass_Resource* result = new Pass_Resource;
+
+        D3D12_RESOURCE_FLAGS flags = dsv_heap ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL : D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+        DX12_Resource_Desc desc = { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
+            .resource_flags = flags,
+            .texture = { .format = format, .width = width, .height = height,
+                .mip_levels = 1, .depth = 1, .num_samples = 1 }, };
+        if (dsv_heap) {
+            desc.do_clear = true;
+            desc.clear_value = {
+                .Format = format,
+                .DepthStencil = { .Depth = 1.0f, .Stencil = 0u }
+            };
+        }
+        result->resource = dx12_alloc_resource(device, desc);
+
+        if (srv_heap) {
+            result->srv = dx12_alloc_descriptor(srv_heap);
+            dx12_create_srv(device, result->resource, &result->srv);
+        }
+
+        if (rtv_heap) {
+            result->rtv = dx12_alloc_descriptor(rtv_heap);
+            dx12_create_rtv(device, result->resource, &result->rtv, { .Format = format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D, .Texture2D = { .MipSlice = 0, .PlaneSlice = 0 } });
+        }
+
+        if (dsv_heap) {
+            result->dsv = dx12_alloc_descriptor(dsv_heap);
+            dx12_create_dsv(device, result->resource, &result->dsv, format);
+        }
+
+        return result;
     }
 }

@@ -54,9 +54,10 @@ namespace Engine
         return format;
     }
 
-    ENGINE_API DX12_Device* dx12_create_device()
+    ENGINE_API bool dx12_init_device(DX12_Device* device, bool use_debug_layer)
     {
-        bool use_debug_layer = true;
+        if (!device) return false;
+
         DWORD dxgi_factory_flags = 0;
         ID3D12Debug* debug_interface = nullptr;
         ID3D12Debug5* debug_interface_5 = nullptr;
@@ -80,7 +81,6 @@ namespace Engine
         //
         // @Todo: DRED?
         //
-
         IDXGIInfoQueue* dxgi_info_queue = nullptr;
         if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgi_info_queue)))) {
             dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
@@ -138,8 +138,8 @@ namespace Engine
             assert(0, "couldn't find a capable device.");
         }
 
-        ID3D12Device10* device = nullptr;
-        device_0->QueryInterface(IID_PPV_ARGS(&device));
+        ID3D12Device10* device_10 = nullptr;
+        device_0->QueryInterface(IID_PPV_ARGS(&device_10));
 
         // Cleanups
         dx12_safe_release_and_set_to_null(&device_0);
@@ -148,19 +148,18 @@ namespace Engine
         dx12_safe_release_and_set_to_null(&debug_interface_5);
         dx12_safe_release_and_set_to_null(&debug_interface);
 
-        auto* result = new DX12_Device;
-        result->native_device = device;
-        result->factory = dxgi_factory_6;
+        device->native_device = device_10;
+        device->factory = dxgi_factory_6;
 
-        return result;
+        return true;
     }
 
-    ENGINE_API void dx12_destroy_device(DX12_Device* device)
+    ENGINE_API bool dx12_deinit_device(DX12_Device* device)
     {
-        if (device) {
-            if (device->native_device) { device->native_device->Release(); }
-            if (device->factory)       { device->factory->Release(); }
-        }
+        if (!device || !device->native_device || !device->factory) return false;
+        device->native_device->Release();
+        device->factory->Release();
+        return true;
     }
 
     ENGINE_API DX12_Swap_Chain* dx12_create_swap_chain(DX12_Device* device, DX12_Command_Queue* cmd_queue, DX12_Descriptor_Heap* rtv_heap, HWND hwnd, u32 width, u32 height, u32 num_frames)
@@ -241,7 +240,7 @@ namespace Engine
         }
     }
 
-    ENGINE_API DX12_Command_Queue* dx12_create_command_queue(DX12_Device* device, D3D12_COMMAND_LIST_TYPE type)
+    ENGINE_API bool dx12_init_command_queue(DX12_Device* device, DX12_Command_Queue* cmd_queue, D3D12_COMMAND_LIST_TYPE type)
     {
         D3D12_COMMAND_QUEUE_DESC desc = {
             .Type     = type,
@@ -250,68 +249,65 @@ namespace Engine
             .NodeMask = 0, // Single GPU
         };
 
-        DX12_Command_Queue* result = new DX12_Command_Queue;
-
-        if (FAILED(device->native_device->CreateCommandQueue(&desc, IID_PPV_ARGS(&result->native_cmd_queue)))) {
-            return nullptr;
+        if (FAILED(device->native_device->CreateCommandQueue(&desc, IID_PPV_ARGS(&cmd_queue->native_cmd_queue)))) {
+            return false;
         }
 
-        return result;
+        return true;
     }
 
-    ENGINE_API DX12_Command_List* dx12_create_command_list(DX12_Device* device, D3D12_COMMAND_LIST_TYPE type)
+    ENGINE_API bool dx12_deinit_command_queue(DX12_Command_Queue* cmd_queue)
     {
-        if (!device) { return nullptr; }
+        if (!cmd_queue || !cmd_queue->native_cmd_queue) return false;
+        cmd_queue->native_cmd_queue->Release();
+        return true;
+    }
+
+    ENGINE_API bool dx12_init_command_list(DX12_Device* device, DX12_Command_List* cmd_list, D3D12_COMMAND_LIST_TYPE type)
+    {
+        if (!device || !cmd_list) return false;
 
         ID3D12CommandAllocator*     dx12_cmd_allocator;
         ID3D12GraphicsCommandList7* dx12_cmd_list;
 
-        if (FAILED(device->native_device->CreateCommandAllocator(type, IID_PPV_ARGS(&dx12_cmd_allocator)))) { return nullptr; }
-        if (FAILED(device->native_device->CreateCommandList1(0, type, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&dx12_cmd_list)))) { return nullptr; }
+        if (FAILED(device->native_device->CreateCommandAllocator(type, IID_PPV_ARGS(&dx12_cmd_allocator)))) { return false; }
+        if (FAILED(device->native_device->CreateCommandList1(0, type, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&dx12_cmd_list)))) { return false; }
 
-        DX12_Command_List* result = new DX12_Command_List;
-        result->native_cmd_allocator = dx12_cmd_allocator;
-        result->native_cmd_list      = dx12_cmd_list;
+        cmd_list->native_cmd_allocator = dx12_cmd_allocator;
+        cmd_list->native_cmd_list      = dx12_cmd_list;
 
-        return result;
+        return true;
     }
  
-    ENGINE_API void dx12_destroy_command_queue(DX12_Command_Queue* cmd_queue)
+    ENGINE_API bool dx12_deinit_command_list(DX12_Command_List* cmd_list)
     {
-        if (cmd_queue) {
-            if (cmd_queue->native_cmd_queue) { cmd_queue->native_cmd_queue->Release(); }
-        }
+        if (!cmd_list || !cmd_list->native_cmd_list || cmd_list->native_cmd_allocator) { return false; }
+        cmd_list->native_cmd_list->Release();
+        cmd_list->native_cmd_allocator->Release();
+        return true;
     }
 
-    ENGINE_API void dx12_destroy_command_list(DX12_Command_List* cmd_list)
+    ENGINE_API bool dx12_init_fence(DX12_Device* device, DX12_Fence* fence)
     {
-        if (cmd_list) {
-            if (cmd_list->native_cmd_list)      { cmd_list->native_cmd_list->Release();      }
-            if (cmd_list->native_cmd_allocator) { cmd_list->native_cmd_allocator->Release(); }
+        if (!device || !fence) return false;
+
+        ID3D12Fence* native_fence;
+        if (FAILED(device->native_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&native_fence)))) {
+            return false;
         }
+
+        fence->native_fence = native_fence;
+        fence->value = 0;
+        fence->event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+
+        return true;
     }
 
-    ENGINE_API DX12_Fence* dx12_create_fence(DX12_Device* device)
+    ENGINE_API bool dx12_deinit_fence(DX12_Fence* fence)
     {
-        ID3D12Fence* fence;
-        if (FAILED(device->native_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence)))) {
-            return nullptr;
-        }
-
-        DX12_Fence* result = new DX12_Fence;
-        result->native_fence = fence;
-        result->value = 0;
-        result->event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-
-        return result;
-    }
-
-    ENGINE_API void dx12_destroy_fence(DX12_Fence* fence)
-    {
-        if (fence) {
-            if (fence->native_fence) { fence->native_fence->Release(); }
-            if (fence->event)        { CloseHandle(fence->event);      }
-        }
+        if (!fence || !fence->native_fence || !fence->event) { return false; }
+        fence->native_fence->Release();
+        CloseHandle(fence->event);
     }
 
     ENGINE_API DX12_Descriptor_Heap* dx12_create_descriptor_heap(DX12_Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 max_descriptors)
