@@ -56,7 +56,7 @@ namespace Engine
 
         if (srv_heap) {
             result->srv = dx12_alloc_descriptor(srv_heap);
-            dx12_create_srv(device, result->resource, &result->srv);
+            dx12_create_srv(device, result->resource, &result->srv, result->resource->desc.texture.format);
         }
 
         if (rtv_heap) {

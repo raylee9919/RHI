@@ -8,4 +8,4 @@ target("Editor")
     add_headerfiles("*.h")
     add_files("*.cpp")
 
-    add_deps("Engine", "DearIMGUI")
+    add_deps("Engine", "DearIMGUI", "ImGuizmo")

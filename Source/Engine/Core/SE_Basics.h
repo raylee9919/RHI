@@ -78,13 +78,9 @@ Scope_Exit<F> scope_exit_make(F f) {
 #endif
 
 #ifdef PLATFORM_WINDOWS
-// Windows specific
-//
 #  define ENGINE_API __declspec(dllexport)
-
 #  define CORE_ASSERT_SUCCEEDED(hr) CORE_ASSERT(SUCCEEDED(hr))
-
-#include <unknwn.h>
+#  include <unknwn.h>
 
 template <typename T>
 FORCE_INLINE void SafeReleaseCOM(T** ppCOM)
@@ -137,6 +133,9 @@ namespace Engine
 
     template <typename T>
     using Set = std::unordered_set<T>;
+
+    template <typename T>
+    using List = std::list<T>;
 
     template <typename K, typename V>
     using Hash_Table = std::unordered_map<K, V>;

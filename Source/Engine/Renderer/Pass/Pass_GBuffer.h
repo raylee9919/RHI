@@ -4,7 +4,7 @@
 
 #include "Renderer/Renderer.h"
 
-#include "Entity/Entity.h"
+#include "Scene/Entity.h"
 
 namespace Engine
 {

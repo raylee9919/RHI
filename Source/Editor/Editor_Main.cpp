@@ -11,18 +11,17 @@
 #include "RHI/RHI.h"
 #include "Shader/DXIL/DXIL_Compiler.h"
 #include "Renderer/Renderer.h"
-#include "Entity/Entity.h"
+#include "Scene/Entity.h"
 
 #include "Renderer/Pass/Pass_GBuffer.h"
 #include "Renderer/Pass/Pass_Defer.h"
 #include "Renderer/Pass/Pass_Blit.h"
 
-#include "ThirdParty/DearIMGUI/imgui.h"
-#include "ThirdParty/DearIMGUI/imgui_impl_sdl3.h"
-#include "ThirdParty/DearIMGUI/imgui_impl_dx12.h"
+#include "Editor_UI.h"
 
 using namespace Engine;
 using namespace DXIL;
+using namespace Editor;
 
 static DX12_Descriptor_Heap* g_imgui_srv_heap;
 
@@ -127,7 +126,7 @@ alloc_mesh_resource(DX12_Device* device, DX12_Command_Queue* cmd_queue, DX12_Com
             dx12_upload_buffer(device, cmd_queue, cmd_list, fence, vertex_buffer, slice->vertices.data(), size);
 
             DX12_Descriptor vertex_buffer_descriptor = dx12_alloc_descriptor(srv_heap);
-            dx12_create_srv(device, vertex_buffer, &vertex_buffer_descriptor, count, stride);
+            dx12_create_srv(device, vertex_buffer, &vertex_buffer_descriptor, DXGI_FORMAT_UNKNOWN, count, stride);
 
             slice_res.vertex_buffer = vertex_buffer;
             slice_res.vertex_buffer_descriptor = vertex_buffer_descriptor;
@@ -326,7 +325,7 @@ INTERNAL std::pair <DX12_Resource*, u32> alloc_resource_and_srv_and_return_id(DX
 
         // allocate srv and get bindless id.
         auto srv = dx12_alloc_descriptor(srv_heap);
-        dx12_create_srv(device, tex, &srv);
+        dx12_create_srv(device, tex, &srv, tex->desc.texture.format);
         id = srv.index;
     }
 
@@ -364,7 +363,7 @@ INTERNAL Material material_from_json(DX12_Device* device, DX12_Command_Queue* cm
         auto* mat_res = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .buffer = { .size = size }});
         dx12_upload_buffer(device, cmd_queue, cmd_list, fence, mat_res, &mat.shader_material, size);
         auto srv = dx12_alloc_descriptor(srv_heap);
-        dx12_create_srv(device, mat_res, &srv, 1, size);
+        dx12_create_srv(device, mat_res, &srv, mat_res->desc.texture.format, 1, size);
 
         mat.id       = srv.index;
         mat.resource = mat_res;
@@ -585,8 +584,11 @@ void deinit_pipeline_state(DX12_Pipeline_State* pso) {
 
 int main()
 {
-    Asset_State* asset_state = new Asset_State;
+    // Scene
+    Scene* scene = new Scene;
 
+    // Asset
+    Asset_State* asset_state = new Asset_State;
     file_sys::path project_dir  = "C:/dev/swl/RHI/Project";
     file_sys::path asset_dir    = project_dir / "Asset";
     file_sys::path material_dir = asset_dir / "Material";
@@ -653,7 +655,7 @@ int main()
     resource_state->meshes[res.name] = res;
 
     // @Temporary: Hard coding a name for now.
-    Entity* sponza = new Entity;
+    Entity* sponza = scene->alloc_entity();
     sponza->mesh_name = "Sponza_mesh_0";
 
 
@@ -666,15 +668,15 @@ int main()
         camera.fov          = to_radian(90.0f);
         camera.near_z       = 0.1f;
         camera.far_z        = 10000.0f;
-        camera.yaw          = PI * 0.5f;
-        camera.pitch        = to_radian(0.f);
+        camera.yaw          = to_radian(90.0f);
+        camera.pitch        = to_radian(0.0f);
         camera.speed        = 128.f;
     };
 
     Shader_Camera shader_camera = get_shader_camera(&camera);
     auto* camera_resource = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .buffer = { .size = (u32)sizeof(shader_camera) } });
     auto camera_srv = dx12_alloc_descriptor(srv_heap);
-    dx12_create_srv(device, camera_resource, &camera_srv, 1, (u32)sizeof(shader_camera));
+    dx12_create_srv(device, camera_resource, &camera_srv, DXGI_FORMAT_UNKNOWN, 1, (u32)sizeof(shader_camera));
 
     // @Temporary: Create linear sampler.
     //
@@ -809,6 +811,7 @@ int main()
 
     // Setup scaling
     ImGuiStyle& style = ImGui::GetStyle();
+    ui_apply_style();
     style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
     style.FontScaleDpi = main_scale;        // Set initial font scale. (in docking branch: using io.ConfigDpiScaleFonts=true automatically overrides this for every window depending on the current monitor)
 
@@ -837,8 +840,6 @@ int main()
 
 
 
-
-
     // Main loop
     //
     while (window->is_running) {
@@ -850,11 +851,14 @@ int main()
             ImGui_ImplDX12_NewFrame();
             ImGui_ImplSDL3_NewFrame();
             ImGui::NewFrame();
+            ImGuizmo::BeginFrame();
+
+            ImGui::Begin("Panel");
             {
-                ImGui::Begin("Panel");
                 ImGui::Text("%.3f mspf (%.1f fps)", 1000.0f / io.Framerate, io.Framerate);
-                ImGui::End();
             }
+            ImGui::End();
+
             ImGui::Render(); // generates draw data, still CPU-side
         }
 

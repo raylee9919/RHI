@@ -855,7 +855,7 @@ namespace Engine
         device->native_device->CreateDepthStencilView(resource->native_resource, &dsv_desc, descriptor->cpu_handle);
     }
 
-    ENGINE_API void dx12_create_srv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, u32 num_elements, u32 stride_in_bytes)
+    ENGINE_API void dx12_create_srv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, DXGI_FORMAT view_format, u32 num_elements, u32 stride_in_bytes)
     {
         if (resource->desc.type == DX12_RESOURCE_TYPE_BUFFER) {
             auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::StructuredBuffer(num_elements, stride_in_bytes);
@@ -863,7 +863,7 @@ namespace Engine
 
         } else if (resource->desc.type == DX12_RESOURCE_TYPE_TEXTURE_2D) {
             auto tex = resource->desc.texture;
-            auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::Tex2D(tex.format, tex.mip_levels);
+            auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::Tex2D(view_format, tex.mip_levels);
             device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
 
         } else {

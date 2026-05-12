@@ -1,9 +1,10 @@
 -- Copyright Seong Woo Lee. All Rights Reserved.
 
-target("Entity")
+target("ImGuizmo")
     set_kind("object")
-    set_group("Engine")
+    set_group("ThirdParty")
 
-    add_includedirs(".", { public = true })
     add_headerfiles("*.h")
     add_files("*.cpp")
+
+    add_deps("DearIMGUI")
