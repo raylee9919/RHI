@@ -12,7 +12,7 @@ namespace Engine
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        ImGuizmo::AllowAxisFlip(false);
+        ImGuizmo::AllowAxisFlip(true);
         ImGuizmo::SetOrthographic(false);
         ImGuizmo::BeginFrame();
     }
@@ -96,19 +96,18 @@ namespace Engine
                 ImGui::SeparatorText("Transform");
 
                 // Position
-                ImGui::Text("Position");
-                ImGui::DragFloat3("##Position", &entity->position.x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f m");
+                ImGui::Text("Translation");
+                ImGui::DragFloat3("##Position", &entity->position.x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
 
-                // Rotation (Quaternion -> Euler)
-                //vec3 euler_deg = quat_to_euler_deg(entity->orientation);
-
-                //if (ImGui::DragFloat3("Rotation", &euler_deg.x, 1.0f)) {
-                //    transform.orientation = euler_deg_to_quat(euler_deg);
-                //}
+                // Orientation
+                ImGui::Text("Rotation");
+                vec3 orientation = to_degree(euler_from_quaternion(entity->orientation));
+                ImGui::DragFloat3("##Orientation", &orientation.x, 0.01f, -360.f, 360.f, "%.2f");
+                entity->orientation = quaternion_from_euler(to_radian(orientation));
 
                 // Scale
-                ImGui::Text("Scale");
-                ImGui::DragFloat3("##Scale", &entity->scaling.x, 0.01f, 0.00001f, 1000.0f);
+                ImGui::Text("Scaling");
+                ImGui::DragFloat3("##Scaling", &entity->scaling.x, 0.01f, 0.00001f, 1000.0f);
             }
         }
         ImGui::End();
@@ -116,33 +115,39 @@ namespace Engine
 
     void ui_gizmo(Editor_State* editor, Scene* scene, m4x4 view, m4x4 proj, f32 viewport_x, f32 viewport_y, f32 viewport_width, f32 viewport_height)
     {
+        using namespace ImGuizmo;
+
         Entity* entity = scene->get_entity(editor->selected_entity_id);
         if (entity) {
-            m4x4 matrix;
-            vec3 euler = to_euler(entity->orientation);
-            vec3 orientation = vec3(euler.x, euler.y, euler.z); // Swizzle?
-            orientation.x = to_radian(orientation.x);
-            orientation.y = to_radian(orientation.y);
-            orientation.z = to_radian(orientation.z);
+            SetRect(viewport_x, viewport_y, viewport_width, viewport_height);
+
+            if (ImGui::IsKeyPressed(ImGuiKey_1)) { editor->current_gizmo_operation = OPERATION::TRANSLATE; }
+            if (ImGui::IsKeyPressed(ImGuiKey_2)) { editor->current_gizmo_operation = OPERATION::ROTATE;    }
+            if (ImGui::IsKeyPressed(ImGuiKey_3)) { editor->current_gizmo_operation = OPERATION::SCALE;     }
 
             view = transpose(view);
             proj = transpose(proj);
 
-            if (ImGui::IsKeyPressed(ImGuiKey_I)) { editor->current_gizmo_operation = ImGuizmo::OPERATION::TRANSLATE; }
-            if (ImGui::IsKeyPressed(ImGuiKey_O)) { editor->current_gizmo_operation = ImGuizmo::OPERATION::ROTATE;    }
-            if (ImGui::IsKeyPressed(ImGuiKey_P)) { editor->current_gizmo_operation = ImGuizmo::OPERATION::SCALE;     }
+            float M[16];
+            vec3 rotation = euler_from_quaternion(entity->orientation);
+            rotation.x = to_degree(rotation.x);
+            rotation.y = to_degree(rotation.y);
+            rotation.z = to_degree(rotation.z);
+            RecomposeMatrixFromComponents(&entity->position.x, &rotation.x, &entity->scaling.x, M);
+            Manipulate(&view._11, &proj._11, editor->current_gizmo_operation, ImGuizmo::MODE::LOCAL, M);
 
-            //auto mode = editor->current_gizmo_operation == ImGuizmo::OPERATION::SCALE ? ImGuizmo::MODE::LOCAL : ImGuizmo::MODE::WORLD;
-            auto mode = ImGuizmo::MODE::WORLD;
-            ImGuizmo::RecomposeMatrixFromComponents(&entity->position.x, &orientation.x, &entity->scaling.x, &matrix._11);
-            ImGuizmo::SetRect(viewport_x, viewport_y, viewport_width, viewport_height);
-            ImGuizmo::Manipulate(&view._11, &proj._11, editor->current_gizmo_operation, mode, &matrix._11);
-            ImGuizmo::DecomposeMatrixToComponents(&matrix._11, &entity->position.x, &orientation.x, &entity->scaling.x);
+            if (ImGuizmo::IsUsing()) {
+                float T[3], R[3], S[3];
+                DecomposeMatrixToComponents(M, T, R, S);
 
-            orientation.x = to_degree(orientation.x);
-            orientation.y = to_degree(orientation.y);
-            orientation.z = to_degree(orientation.z);
-            entity->orientation = to_quaternion(orientation);
+                R[0] = to_radian(R[0]);
+                R[1] = to_radian(R[1]);
+                R[2] = to_radian(R[2]);
+
+                entity->position = vec3(T[0], T[1], T[2]);
+                entity->orientation = quaternion_from_euler(vec3(R[0], R[1], R[2]));
+                entity->scaling = vec3(S[0], S[1], S[2]);
+            }
         }
     }
 

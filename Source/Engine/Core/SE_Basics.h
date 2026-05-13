@@ -44,6 +44,8 @@ typedef double f64;
 #define Max(a, b) (((a) > (b)) ? (a) : (b))
 #define Clamp(x, lo, hi) Max(Min((x), (hi)), (lo))
 
+#define FLOAT32_MAX 3.402823466e+38f
+
 template <typename F>
 struct Scope_Exit {
     Scope_Exit(F f) : f(f) {}

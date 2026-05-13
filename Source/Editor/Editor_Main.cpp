@@ -83,9 +83,9 @@ struct Camera {
                 f32 dy = input->current_mouse_y - last_mouse_y;
 
                 f32 rot_speed = 0.25f;
-                yaw   += (rot_speed * dx * dt);
-                pitch -= (rot_speed * dy * dt);
-                yaw   = fmod(yaw, PI * 2.f);
+                yaw   -= (rot_speed * dx * dt);
+                pitch += (rot_speed * dy * dt);
+                yaw   = Engine::fmod(yaw, PI * 2.f);
                 pitch = Clamp(pitch, -PI * 0.45f, PI * 0.45f);
 
                 last_mouse_x = input->current_mouse_x;
@@ -93,8 +93,8 @@ struct Camera {
             }
         }
 
-        view      = m4x4::look_to_lh(position, forward, vec3(0.f, 1.f, 0.f));
-        proj      = m4x4::perspective_lh(fov, aspect_ratio, near_z, far_z);
+        view      = look_to_rh(position, forward, vec3(0.f, 1.f, 0.f));
+        proj      = perspective_rh(fov, aspect_ratio, near_z, far_z);
         view_proj = proj * view;
     }
 };
@@ -716,12 +716,12 @@ int main()
     //
     Camera camera; 
     {
-        camera.position     = vec3(0.f, 2.f, 0.f);
+        camera.position     = vec3(4.f, 2.f, 0.f);
         camera.aspect_ratio = 9.f / 16.f;
         camera.fov          = to_radian(90.0f);
         camera.near_z       = 0.1f;
         camera.far_z        = 10000.0f;
-        camera.yaw          = to_radian(90.0f);
+        camera.yaw          = to_radian(-90.0f);
         camera.pitch        = to_radian(0.0f);
         camera.speed        = 1.0f;
     };
