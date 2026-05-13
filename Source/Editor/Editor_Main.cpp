@@ -689,7 +689,7 @@ int main()
         }
     }
 
-    {
+    if (1) {
         String path = (asset_dir / "Model/DamagedHelmet/DamagedHelmet.gltf").string();
 
         auto loaded = load_gltf(scene, asset_state, path, true);
@@ -908,7 +908,6 @@ int main()
     while (window->is_running) {
         window->poll_events();
 
-
         // Update
         f32 time_elapsed = 0.017f;
         constexpr f32 dt = 1.f / 60.f;
@@ -917,9 +916,12 @@ int main()
         }
 
         // UI
+        if (window->my_input_system->key_is_down[KEY_F1] && !window->my_input_system->key_was_down[KEY_F1]) {
+            editor->show_ui = !editor->show_ui;
+        }
         ui_begin(); 
+        if (editor->show_ui) 
         {
-
             ImGui::Begin("Panel");
             ImGui::Text("%.3f mspf (%.1f fps)", 1000.0f / io.Framerate, io.Framerate);
             ImGui::End();

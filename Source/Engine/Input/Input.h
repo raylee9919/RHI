@@ -135,12 +135,13 @@ namespace Engine
     {
         Input_System();
 
-        b8 key_is_down[512];
+        b8 key_is_down[512] = {};
+        b8 key_was_down[512] = {};
 
-        f32 current_mouse_x;
-        f32 current_mouse_y;
-        b8 mouse_was_down[32];
-        b8 mouse_is_down[32];
+        f32 current_mouse_x = 0.0f;
+        f32 current_mouse_y = 0.0f;
+        b8 mouse_was_down[32] = {};
+        b8 mouse_is_down[32] = {};
     };
 
 
