@@ -17,11 +17,11 @@
 #include "Renderer/Pass/Pass_Defer.h"
 #include "Renderer/Pass/Pass_Blit.h"
 
+#include "Editor.h"
 #include "Editor_UI.h"
 
 using namespace Engine;
 using namespace DXIL;
-using namespace Editor;
 
 
 struct GPU_Arena {
@@ -583,18 +583,18 @@ void deinit_pipeline_state(DX12_Pipeline_State* pso) {
     }
 }
 
-#define WIDTH  1920
-#define HEIGHT 1080
+#if 1
+#  define WIDTH  2560
+#  define HEIGHT 1440
+#else
+#  define WIDTH  1920
+#  define HEIGHT 1080
+#endif
 
-void update_per_instance_transforms(Scene* world, Entity* entity, u32& current_index, void* mapped_ptr, u32 stride)
+void update_per_instance_transforms(Scene* world, Entity* entity, u32& current_index, void* mapped_ptr, u32 stride, m4x4 parent_transform)
 {
-    Xform xform = {
-        .translation = entity->position,
-        .rotation = entity->orientation,
-        .scale = entity->scaling 
-    };
-
-    m4x4 transform = to_m4x4(xform);
+    m4x4 local_transform =to_m4x4(entity->position, entity->orientation, entity->scaling);
+    m4x4 transform = local_transform * parent_transform;
     u8* ptr = (u8*)mapped_ptr + stride * current_index;
     memcpy(ptr, &transform, stride);
 
@@ -602,7 +602,7 @@ void update_per_instance_transforms(Scene* world, Entity* entity, u32& current_i
 
     for (auto id : entity->children) {
         auto* child = world->get_entity(id);
-        update_per_instance_transforms(world, child, ++current_index, mapped_ptr, stride);
+        update_per_instance_transforms(world, child, ++current_index, mapped_ptr, stride, transform);
     }
 }
 
@@ -610,6 +610,9 @@ int main()
 {
     // Scene
     Scene* scene = new Scene;
+
+    // Editor
+    Editor_State* editor = new Editor_State;
 
     // Asset
     Asset_State* asset_state = new Asset_State;
@@ -905,22 +908,6 @@ int main()
     while (window->is_running) {
         window->poll_events();
 
-        // @Temporary: GUI
-        //
-        {
-            ImGui_ImplDX12_NewFrame();
-            ImGui_ImplSDL3_NewFrame();
-            ImGui::NewFrame();
-            ImGuizmo::BeginFrame();
-
-            ImGui::Begin("Panel");
-            {
-                ImGui::Text("%.3f mspf (%.1f fps)", 1000.0f / io.Framerate, io.Framerate);
-            }
-            ImGui::End();
-
-            ImGui::Render(); // generates draw data, still CPU-side
-        }
 
         // Update
         f32 time_elapsed = 0.017f;
@@ -928,6 +915,23 @@ int main()
         for (;time_elapsed >= dt; time_elapsed -= dt) {
             camera.update(dt, window->my_input_system);
         }
+
+        // UI
+        ui_begin(); 
+        {
+
+            ImGui::Begin("Panel");
+            ImGui::Text("%.3f mspf (%.1f fps)", 1000.0f / io.Framerate, io.Framerate);
+            ImGui::End();
+
+            ui_main_menu_bar();
+            ui_scene_hierarchy(editor, scene);
+            ui_entity_property(editor, scene);
+            ui_gizmo(editor, scene, camera.view, camera.proj, 0, 0, tex_width, tex_height);
+        }
+        ui_end();
+
+
 
         // Upload camera resource
         shader_camera = get_shader_camera(&camera);
@@ -937,7 +941,7 @@ int main()
         u32 current_index = 0;
         for (auto id : scene->root->children) {
             auto* entity = scene->get_entity(id);
-            update_per_instance_transforms(scene, entity, current_index, transforms_ptr, stride);
+            update_per_instance_transforms(scene, entity, current_index, transforms_ptr, stride, m4x4::identity());
             current_index++;
         }
 

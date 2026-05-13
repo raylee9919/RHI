@@ -6,7 +6,7 @@ namespace Engine
 {
     Scene::Scene()
     {
-        root = new Entity;
+        root = alloc_entity("SceneRoot");
     }
 
     Scene::~Scene()
@@ -33,7 +33,7 @@ namespace Engine
         }
     }
 
-    ENGINE_API Entity* Scene::alloc_entity()
+    Entity* Scene::alloc_entity(const String& base_name)
     {
         Entity* result = nullptr;
 
@@ -47,6 +47,19 @@ namespace Engine
         result->id = next_id++;
         entity_table[result->id] = result;
 
+        result->name = alloc_name(base_name);
+
+        return result;
+    }
+
+    String Scene::alloc_name(const String& base_name)
+    {
+        String result = base_name;
+        int prefix = 0;
+        while (using_names.contains(result)) {
+            result = base_name + std::to_string(prefix++);
+        }
+        using_names.insert(result);
         return result;
     }
 }

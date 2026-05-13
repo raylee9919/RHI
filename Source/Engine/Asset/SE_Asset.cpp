@@ -107,7 +107,8 @@ namespace Engine
                                                  const Array<Mesh*>& meshes, const Array<cgltf_mesh*>& cgltf_meshes,
                                                  cgltf_node* node, Entity* parent)
     {
-        Entity* entity = world->alloc_entity();
+        String name = node->name ? node->name : "Entity";
+        Entity* entity = world->alloc_entity(name);
 
         if (parent) { parent->children.push_back(entity->id); }
 

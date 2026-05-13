@@ -389,4 +389,73 @@ namespace Engine
 
         return m;
     }
+
+    ENGINE_API m4x4 to_m4x4(vec3 translation, Quaternion rotation, vec3 scaling)
+    {
+        Xform xform = {
+            .translation = translation,
+            .rotation = rotation,
+            .scale = scaling
+        };
+        return to_m4x4(xform);
+    }
+
+    ENGINE_API m4x4 transpose(m4x4& m)
+    {
+        m4x4 result;
+        result._11 = m._11; result._12 = m._21; result._13 = m._31; result._14 = m._41;
+        result._21 = m._12; result._22 = m._22; result._23 = m._32; result._24 = m._42;
+        result._31 = m._13; result._32 = m._23; result._33 = m._33; result._34 = m._43;
+        result._41 = m._14; result._42 = m._24; result._43 = m._34; result._44 = m._44;
+        return result;
+    }
+
+    ENGINE_API vec3 to_euler(Quaternion quat)
+    {
+        vec3 euler;
+
+        // Roll (X-axis rotation)
+        float sinr_cosp = 2.0f * (quat.w * quat.x + quat.y * quat.z);
+        float cosr_cosp = 1.0f - 2.0f * (quat.x * quat.x + quat.y * quat.y);
+        euler.x = atan2f(sinr_cosp, cosr_cosp);
+
+        // Pitch (Y-axis rotation)
+        float sinp = 2.0f * (quat.w * quat.y - quat.z * quat.x);
+        if (fabsf(sinp) >= 1.0f) {
+            euler.y = copysignf(PI / 2.0f, sinp); // gimbal lock: clamp to ±90°
+        } else {
+            euler.y = asinf(sinp);
+        }
+
+        // Yaw (Z-axis rotation)
+        float siny_cosp = 2.0f * (quat.w * quat.z + quat.x * quat.y);
+        float cosy_cosp = 1.0f - 2.0f * (quat.y * quat.y + quat.z * quat.z);
+        euler.z = atan2f(siny_cosp, cosy_cosp);
+
+        // Convert radians to degrees
+        euler.x = euler.x * (180.0f / PI);
+        euler.y = euler.y * (180.0f / PI);
+        euler.z = euler.z * (180.0f / PI);
+
+        return euler;}
+
+    ENGINE_API Quaternion to_quaternion(vec3 euler)
+    {
+        // Convert degrees to radians
+        float rx = euler.x * (PI / 180.0f);
+        float ry = euler.y * (PI / 180.0f);
+        float rz = euler.z * (PI / 180.0f);
+
+        float cr = cosf(rx * 0.5f);  float sr = sinf(rx * 0.5f);
+        float cp = cosf(ry * 0.5f);  float sp = sinf(ry * 0.5f);
+        float cy = cosf(rz * 0.5f);  float sy = sinf(rz * 0.5f);
+
+        Quaternion q;
+        q.w = cr * cp * cy + sr * sp * sy;
+        q.x = sr * cp * cy - cr * sp * sy;
+        q.y = cr * sp * cy + sr * cp * sy;
+        q.z = cr * cp * sy - sr * sp * cy;
+
+        return q;
+    }
 }

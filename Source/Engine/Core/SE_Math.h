@@ -92,9 +92,13 @@ namespace Engine
         static AABB RevInf();
     };
 
-    FORCE_INLINE f32 to_radian(f32 f)
-    {
+    FORCE_INLINE f32 to_radian(f32 f) {
         constexpr f32 d = (f32)PI / 180.f;
+        return f * d;
+    }
+
+    FORCE_INLINE f32 to_degree(f32 f) {
+        constexpr f32 d = 180.0f / (f32)PI;
         return f * d;
     }
 
@@ -122,4 +126,9 @@ namespace Engine
     ENGINE_API m4x4 z_rotation(const f32 radian);
 
     ENGINE_API m4x4 to_m4x4(Xform xform);
+    ENGINE_API m4x4 to_m4x4(vec3 translation, Quaternion rotation, vec3 scaling);
+    ENGINE_API m4x4 transpose(m4x4& m);
+
+    ENGINE_API vec3 to_euler(Quaternion quat);
+    ENGINE_API Quaternion to_quaternion(vec3 euler);
 }

@@ -10,9 +10,11 @@ namespace Engine
     struct ENGINE_API Entity {
         typedef u64 ID;
 
-        ID id; // generational ID
-        String mesh_name;
+        ID id;                  // generational ID
+        String name;            // must be unique.
         List <ID> children;
+
+        String mesh_name;
 
         // Transform
         vec3 position;
@@ -24,7 +26,10 @@ namespace Engine
 
         Entity();
         ~Entity();
-        FORCE_INLINE bool operator == (const Entity* other) { return id == other->id; }
+
+        // @Todo: This is wrong. It may contain invalid ids.
+        // The thing I want to do is retain strictly correct pointers.
+        FORCE_INLINE bool is_leaf() { return children.empty(); }
     };
 
     struct ENGINE_API Scene {
@@ -32,11 +37,13 @@ namespace Engine
         List <Entity*> free_entities;
         Entity* root;
         Hash_Table <Entity::ID, Entity*> entity_table;
+        Set <String> using_names;
 
 
         Scene();
         ~Scene();
-        Entity* alloc_entity();
+        Entity* alloc_entity(const String& base_name);
         Entity* get_entity(Entity::ID id);
+        String alloc_name(const String& base_name);
     };
 }

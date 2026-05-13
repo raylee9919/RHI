@@ -2,8 +2,150 @@
 
 #include "Editor_UI.h"
 
-namespace Editor
+#include <functional>
+
+namespace Engine
 {
+    void ui_begin()
+    {
+        ImGui_ImplDX12_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+
+        ImGuizmo::AllowAxisFlip(false);
+        ImGuizmo::SetOrthographic(false);
+        ImGuizmo::BeginFrame();
+    }
+
+    void ui_end()
+    {
+        ImGui::Render(); // CPU-side
+    }
+
+    void ui_main_menu_bar()
+    {
+        if (ImGui::BeginMainMenuBar())
+        {
+            if (ImGui::BeginMenu("File"))
+            {
+                if (ImGui::MenuItem("New")) {
+                }
+                if (ImGui::MenuItem("Open", "Ctrl+O")) {
+                }
+                if (ImGui::MenuItem("Save", "Ctrl+S")) {
+                }
+                if (ImGui::MenuItem("Save As..")) {
+                }
+
+                ImGui::Separator();
+                if (ImGui::MenuItem("Quit", "Alt+F4")) {
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+    }
+
+    void ui_scene_hierarchy(Editor_State* editor, Scene* scene)
+    {
+        ImGui::Begin("Scene Hierarchy");
+        {
+            ImGuiTreeNodeFlags base_flags = (ImGuiTreeNodeFlags_DrawLinesFull
+                                             | ImGuiTreeNodeFlags_DefaultOpen
+                                             | ImGuiTreeNodeFlags_OpenOnArrow);
+
+            std::function<void(Entity*)> draw_entity = [&](Entity* entity) {
+                ImGuiTreeNodeFlags flags = base_flags;
+                if (entity->is_leaf()) {
+                    flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                }
+
+                bool opened = ImGui::TreeNodeEx(entity->name.c_str(), flags);
+
+                if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                    editor->selected_entity_id = entity->id;
+                }
+
+                if (opened && !entity->is_leaf()) {
+                    for (auto child_id : entity->children) {
+                        auto* child = scene->get_entity(child_id);
+                        draw_entity(child);
+                    }
+                    ImGui::TreePop();
+                }
+            };
+
+            for (auto id : scene->root->children) {
+                auto* root_entity = scene->get_entity(id);
+                draw_entity(root_entity);
+            }
+        }
+        ImGui::End();
+    }
+
+    void ui_entity_property(Editor_State* editor, Scene* scene)
+    {
+        Entity* entity = scene->get_entity(editor->selected_entity_id);
+        if (!entity) return;
+
+        ImGui::Begin("Property Panel");
+        {
+            ImGui::Text("%s", entity->name.c_str());
+
+            { // Transform
+                ImGui::SeparatorText("Transform");
+
+                // Position
+                ImGui::Text("Position");
+                ImGui::DragFloat3("##Position", &entity->position.x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f m");
+
+                // Rotation (Quaternion -> Euler)
+                //vec3 euler_deg = quat_to_euler_deg(entity->orientation);
+
+                //if (ImGui::DragFloat3("Rotation", &euler_deg.x, 1.0f)) {
+                //    transform.orientation = euler_deg_to_quat(euler_deg);
+                //}
+
+                // Scale
+                ImGui::Text("Scale");
+                ImGui::DragFloat3("##Scale", &entity->scaling.x, 0.01f, 0.00001f, 1000.0f);
+            }
+        }
+        ImGui::End();
+    }
+
+    void ui_gizmo(Editor_State* editor, Scene* scene, m4x4 view, m4x4 proj, f32 viewport_x, f32 viewport_y, f32 viewport_width, f32 viewport_height)
+    {
+        Entity* entity = scene->get_entity(editor->selected_entity_id);
+        if (entity) {
+            m4x4 matrix;
+            vec3 euler = to_euler(entity->orientation);
+            vec3 orientation = vec3(euler.x, euler.y, euler.z); // Swizzle?
+            orientation.x = to_radian(orientation.x);
+            orientation.y = to_radian(orientation.y);
+            orientation.z = to_radian(orientation.z);
+
+            view = transpose(view);
+            proj = transpose(proj);
+
+            if (ImGui::IsKeyPressed(ImGuiKey_I)) { editor->current_gizmo_operation = ImGuizmo::OPERATION::TRANSLATE; }
+            if (ImGui::IsKeyPressed(ImGuiKey_O)) { editor->current_gizmo_operation = ImGuizmo::OPERATION::ROTATE;    }
+            if (ImGui::IsKeyPressed(ImGuiKey_P)) { editor->current_gizmo_operation = ImGuizmo::OPERATION::SCALE;     }
+
+            //auto mode = editor->current_gizmo_operation == ImGuizmo::OPERATION::SCALE ? ImGuizmo::MODE::LOCAL : ImGuizmo::MODE::WORLD;
+            auto mode = ImGuizmo::MODE::WORLD;
+            ImGuizmo::RecomposeMatrixFromComponents(&entity->position.x, &orientation.x, &entity->scaling.x, &matrix._11);
+            ImGuizmo::SetRect(viewport_x, viewport_y, viewport_width, viewport_height);
+            ImGuizmo::Manipulate(&view._11, &proj._11, editor->current_gizmo_operation, mode, &matrix._11);
+            ImGuizmo::DecomposeMatrixToComponents(&matrix._11, &entity->position.x, &orientation.x, &entity->scaling.x);
+
+            orientation.x = to_degree(orientation.x);
+            orientation.y = to_degree(orientation.y);
+            orientation.z = to_degree(orientation.z);
+            entity->orientation = to_quaternion(orientation);
+        }
+    }
+
     void ui_apply_style()
     {
         ImGuiStyle& Style = ImGui::GetStyle();
