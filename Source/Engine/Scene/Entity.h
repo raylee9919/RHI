@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Engine/Core/SE_Basics.h"
+#include "Engine/Core/SE_Math.h"
 
 namespace Engine
 {
@@ -13,6 +14,16 @@ namespace Engine
         String mesh_name;
         List <ID> children;
 
+        // Transform
+        vec3 position;
+        Quaternion orientation;
+        vec3 scaling;
+
+        // index in mapped buffer
+        u32 current_transform_index;
+
+        Entity();
+        ~Entity();
         FORCE_INLINE bool operator == (const Entity* other) { return id == other->id; }
     };
 

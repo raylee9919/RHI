@@ -199,7 +199,7 @@ namespace Engine
     ENGINE_API void dx12_signal_fence(DX12_Command_Queue* cmd_queue, DX12_Fence* fence);
     ENGINE_API void dx12_wait_fence(DX12_Fence* fence);
 
-    ENGINE_API DX12_Resource* dx12_alloc_resource(DX12_Device* device, DX12_Resource_Desc desc);
+    ENGINE_API DX12_Resource* dx12_alloc_resource(DX12_Device* device, DX12_Resource_Desc desc, D3D12_RESOURCE_STATES init_state = D3D12_RESOURCE_STATE_COMMON);
     ENGINE_API void dx12_dealloc_resource(DX12_Resource* resource);
     ENGINE_API DX12_Resource dx12_resource_from_native_resource(ID3D12Resource* resource, D3D12_RESOURCE_STATES current_state);
 

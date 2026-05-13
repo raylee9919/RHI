@@ -13,6 +13,17 @@ namespace Engine
     {
     }
 
+    Entity::Entity()
+    {
+        position = vec3(0.f, 0.f, 0.f);
+        orientation = Quaternion(1.0f, 0.0f, 0.0f, 0.0f);
+        scaling = vec3(1.0f, 1.0f, 1.0f);
+    }
+
+    Entity::~Entity()
+    {
+    }
+
     Entity* Scene::get_entity(Entity::ID id)
     {
         if (entity_table.contains(id)) {

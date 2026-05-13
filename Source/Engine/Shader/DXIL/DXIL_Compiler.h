@@ -42,7 +42,7 @@ namespace Engine
             IDxcCompiler3* native_compiler;
             IDxcUtils*     utils;
 
-            Compiled_Shader compile(bool debug, void* source, u64 size, const char* entry, const char* target_profile);
+            Compiled_Shader compile(bool debug, void* source, u64 size, const String& source_name, const char* entry, const char* target_profile);
             Reflection reflect(IDxcResult* compile_result);
         };
 

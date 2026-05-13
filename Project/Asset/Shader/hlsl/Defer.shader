@@ -32,6 +32,7 @@ struct Push_Constants {
     uint normal_id;
     uint uv_id;
     uint material_id;
+
     uint camera_id;
     uint linear_sampler_id;
     uint anisotropic_sampler_id;
@@ -124,6 +125,7 @@ float4 ps_main(PS_Input input) : SV_TARGET
     // uv
     float2 uv = gbuffer_uv.Sample(linear_sampler, input.screen_uv).xy;
 
+    // @Todo: Uninitialized value in the material G-Buffer will cause errors.
     // material
     uint material_id = gbuffer_material_id.Load(int3(input.sv_position.xy, 0));
     StructuredBuffer <Material> material_buffer = ResourceDescriptorHeap[NonUniformResourceIndex(material_id)];
@@ -139,19 +141,27 @@ float4 ps_main(PS_Input input) : SV_TARGET
     float metallic  = 0.0;
     uint orm_id = material.orm_id;
     if (orm_id != 0xffffffff) {
-        Texture2D <float4> orm_texture = ResourceDescriptorHeap[NonUniformResourceIndex(material.orm_id)];
+        Texture2D <float4> orm_texture = ResourceDescriptorHeap[NonUniformResourceIndex(orm_id)];
         float3 orm = orm_texture.Sample(anisotropic_sampler, uv).xyz;
         occlusion = orm.x;
         roughness = orm.y;
         metallic  = orm.z;
     }
 
+    // Emmissive
+    float3 emissive = 0.0;
+    uint emissive_id = material.emissive_id;
+    if (emissive_id != 0xffffffff) {
+        Texture2D <float4> emissive_texture = ResourceDescriptorHeap[NonUniformResourceIndex(emissive_id)];
+        emissive = emissive_texture.Sample(anisotropic_sampler, uv).xyz;
+    }
+
     // @Temporary: Debug light scene
     Point_Light lights[2];
-    lights[0].position = float3(-200.0, 500.0, 0.0);
-    lights[0].radiance = 300000.0;
-    lights[1].position = float3( 500.0, 800.0, 0.0);
-    lights[1].radiance = float3(100000.0, 100000.0, 300000.0);
+    lights[0].position = float3(-2.0, 3.0, 0.0);
+    lights[0].radiance = 12.0;
+    lights[1].position = float3( 5.0, 1.0, 0.0);
+    lights[1].radiance = float3(4.0, 2.0, 12.0);
 
     float3 result = 0.0;
 
@@ -159,6 +169,9 @@ float4 ps_main(PS_Input input) : SV_TARGET
     for (int i = 0; i < 2; ++i) {
         result += compute_irradiance(lights[i], camera, position, n, albedo, roughness, metallic);
     }
+
+    float emissive_intensity = 1.0;
+    result += (emissive * emissive_intensity);
 
     // @Todo: Correct gamma correction
     result = pow(result, 1.0 / 2.2);

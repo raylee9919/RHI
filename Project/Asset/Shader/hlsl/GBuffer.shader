@@ -41,7 +41,10 @@ struct Camera {
 
 struct Push_Constants {
     uint vertex_buffer_id;
+    uint transform_id;
     uint material_id;
+
+    uint transforms_id;
     uint camera_id;
     uint anisotropic_sampler_id;
 };
@@ -57,11 +60,18 @@ PS_Input vs_main(uint vertex_id : SV_VertexID)
 
     StructuredBuffer <Camera> camera_buffer = ResourceDescriptorHeap[push.camera_id];
     Camera camera = camera_buffer[0];
+    float4x4 view_proj = camera.view_proj;
 
-    result.sv_position = mul(camera.view_proj, float4(vert.position, 1.0));
-    result.position    = vert.position;
-    result.normal      = vert.normal;
-    result.tangent     = vert.tangent;
+    StructuredBuffer <float4x4> transforms_buffer = ResourceDescriptorHeap[push.transforms_id];
+    float4x4 transform   = transforms_buffer[push.transform_id];
+    float3x3 orientation = (float3x3)transform;
+    
+    float4 position = mul(transform, float4(vert.position, 1.0));
+
+    result.sv_position = mul(view_proj, position);
+    result.position    = position.xyz;
+    result.normal      = mul(orientation, vert.normal);
+    result.tangent     = float4(mul(orientation, (float3)vert.tangent), vert.tangent.w);
     result.uv          = vert.uv;
 
     return result;

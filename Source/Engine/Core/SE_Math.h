@@ -120,4 +120,6 @@ namespace Engine
     ENGINE_API m4x4 x_rotation(const f32 radian);
     ENGINE_API m4x4 y_rotation(const f32 radian);
     ENGINE_API m4x4 z_rotation(const f32 radian);
+
+    ENGINE_API m4x4 to_m4x4(Xform xform);
 }

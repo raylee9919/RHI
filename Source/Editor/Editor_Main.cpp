@@ -23,7 +23,11 @@ using namespace Engine;
 using namespace DXIL;
 using namespace Editor;
 
-static DX12_Descriptor_Heap* g_imgui_srv_heap;
+
+struct GPU_Arena {
+    DX12_Resource* resource;
+};
+
 
 // Sync with shader!
 struct Shader_Camera {
@@ -58,7 +62,7 @@ struct Camera {
 
         f32 move_speed = speed;
         if (input->key_is_down[KEY_LEFT_SHIFT]) {
-            move_speed *= 3.0f;
+            move_speed *= 0.333333f;
         }
 
         f32 factor = dt * move_speed;
@@ -360,7 +364,7 @@ INTERNAL Material material_from_json(DX12_Device* device, DX12_Command_Queue* cm
 
     { // alloc material id.
         u32 size = (u32)sizeof(mat.shader_material);
-        auto* mat_res = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .buffer = { .size = size }});
+        auto* mat_res = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .buffer = { .size = size } });
         dx12_upload_buffer(device, cmd_queue, cmd_list, fence, mat_res, &mat.shader_material, size);
         auto srv = dx12_alloc_descriptor(srv_heap);
         dx12_create_srv(device, mat_res, &srv, mat_res->desc.texture.format, 1, size);
@@ -393,10 +397,10 @@ void init_pipeline_state(DX12_Device* device, Shader_Compiler* compiler,
     const char* ps_profile = "ps_6_6";
 
     // compile and reflect.
-    auto compiled_vs   = compiler->compile(true, source, length, vs_entry, vs_profile);
+    auto compiled_vs   = compiler->compile(true, source, length, shader_path, vs_entry, vs_profile);
     auto vs_reflection = compiler->reflect(compiled_vs.result);
 
-    auto compiled_ps   = compiler->compile(true, source, length, ps_entry, ps_profile);
+    auto compiled_ps   = compiler->compile(true, source, length, shader_path, ps_entry, ps_profile);
     auto ps_reflection = compiler->reflect(compiled_ps.result);
 
     // Generate reflected push constant header.
@@ -579,8 +583,28 @@ void deinit_pipeline_state(DX12_Pipeline_State* pso) {
     }
 }
 
-#define WIDTH  2560
-#define HEIGHT 1440
+#define WIDTH  1920
+#define HEIGHT 1080
+
+void update_per_instance_transforms(Scene* world, Entity* entity, u32& current_index, void* mapped_ptr, u32 stride)
+{
+    Xform xform = {
+        .translation = entity->position,
+        .rotation = entity->orientation,
+        .scale = entity->scaling 
+    };
+
+    m4x4 transform = to_m4x4(xform);
+    u8* ptr = (u8*)mapped_ptr + stride * current_index;
+    memcpy(ptr, &transform, stride);
+
+    entity->current_transform_index = current_index;
+
+    for (auto id : entity->children) {
+        auto* child = world->get_entity(id);
+        update_per_instance_transforms(world, child, ++current_index, mapped_ptr, stride);
+    }
+}
 
 int main()
 {
@@ -636,47 +660,74 @@ int main()
 
 
 
-    // Import Spozna GLTF "manually".
-    String sponza_path = (asset_dir / "Model/Sponza/Sponza.gltf").string();
-    auto loaded_sponza = load_gltf(asset_state, sponza_path);
 
-    // json will be a representation of material asset for now.
-    // Either you import from an authored asset (gltf, fbx...) or load 
-    // serialized json material from disk, it'll be there.
-    auto& json_array = loaded_sponza.materials;
 
-    for (const auto& json : json_array) {
-        Material mat = material_from_json(device, cmd_queue, cmd_list, fence, srv_heap, json);
-        resource_state->alloc_material(mat);
+
+    // Import GLTF manually.
+    if (1) {
+        String path = (asset_dir / "Model/Sponza/Sponza.gltf").string();
+
+        auto loaded = load_gltf(scene, asset_state, path, false);
+        for (auto* entity : loaded.entities) {
+            scene->root->children.push_back(entity->id);
+        }
+
+        // Material
+        auto& json_array = loaded.materials;
+        for (const auto& json : json_array) {
+            Material mat = material_from_json(device, cmd_queue, cmd_list, fence, srv_heap, json);
+            resource_state->alloc_material(mat);
+        }
+
+        // Mesh
+        for (auto* mesh : loaded.meshes) {
+            auto res = alloc_mesh_resource(device, cmd_queue, cmd_list, fence, srv_heap, mesh);
+            resource_state->meshes[res.name] = res;
+        }
     }
 
-    // Alloc mesh resources.
-    auto res = alloc_mesh_resource(device, cmd_queue, cmd_list, fence, srv_heap, loaded_sponza.meshes[0]);
-    resource_state->meshes[res.name] = res;
+    {
+        String path = (asset_dir / "Model/DamagedHelmet/DamagedHelmet.gltf").string();
 
-    // @Temporary: Hard coding a name for now.
-    Entity* sponza = scene->alloc_entity();
-    sponza->mesh_name = "Sponza_mesh_0";
+        auto loaded = load_gltf(scene, asset_state, path, true);
+        for (auto* entity : loaded.entities) {
+            scene->root->children.push_back(entity->id);
+        }
+
+        // Material
+        auto& json_array = loaded.materials;
+        for (const auto& json : json_array) {
+            Material mat = material_from_json(device, cmd_queue, cmd_list, fence, srv_heap, json);
+            resource_state->alloc_material(mat);
+        }
+
+        // Mesh
+        for (auto* mesh : loaded.meshes) {
+            auto res = alloc_mesh_resource(device, cmd_queue, cmd_list, fence, srv_heap, mesh);
+            resource_state->meshes[res.name] = res;
+        }
+    }
 
 
     // @Temporary
     //
     Camera camera; 
     {
-        camera.position     = vec3(0.f, 300.f, 0.f);
+        camera.position     = vec3(0.f, 2.f, 0.f);
         camera.aspect_ratio = 9.f / 16.f;
         camera.fov          = to_radian(90.0f);
         camera.near_z       = 0.1f;
         camera.far_z        = 10000.0f;
         camera.yaw          = to_radian(90.0f);
         camera.pitch        = to_radian(0.0f);
-        camera.speed        = 128.f;
+        camera.speed        = 1.0f;
     };
 
     Shader_Camera shader_camera = get_shader_camera(&camera);
     auto* camera_resource = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .buffer = { .size = (u32)sizeof(shader_camera) } });
     auto camera_srv = dx12_alloc_descriptor(srv_heap);
     dx12_create_srv(device, camera_resource, &camera_srv, DXGI_FORMAT_UNKNOWN, 1, (u32)sizeof(shader_camera));
+
 
     // @Temporary: Create linear sampler.
     //
@@ -730,6 +781,15 @@ int main()
     }
 
 
+    // Persistently mapped per instance draw data
+    u32 max_transforms = 1024;
+    u32 stride = sizeof(m4x4);
+    auto* transforms_resource = dx12_alloc_resource(device, { .type = DX12_RESOURCE_TYPE_BUFFER, .heap_type = D3D12_HEAP_TYPE_UPLOAD, .buffer = { .size = stride * max_transforms } }, D3D12_RESOURCE_STATE_GENERIC_READ);
+    void* transforms_ptr = nullptr;
+    D3D12_RANGE read_range = {0,0};
+    transforms_resource->native_resource->Map(0, &read_range, &transforms_ptr);
+    auto transforms_srv = dx12_alloc_descriptor(srv_heap);
+    dx12_create_srv(device, transforms_resource, &transforms_srv, DXGI_FORMAT_UNKNOWN, max_transforms, stride);
 
 
     // Make pass resources
@@ -873,6 +933,15 @@ int main()
         shader_camera = get_shader_camera(&camera);
         dx12_upload_buffer(device, cmd_queue, cmd_list, fence, camera_resource, &shader_camera, (u32)sizeof(shader_camera));
 
+        // Upload per instance data
+        u32 current_index = 0;
+        for (auto id : scene->root->children) {
+            auto* entity = scene->get_entity(id);
+            update_per_instance_transforms(scene, entity, current_index, transforms_ptr, stride);
+            current_index++;
+        }
+
+
 
 
         cmd_list->begin();
@@ -883,8 +952,9 @@ int main()
 
             {
                 GBuffer_Pass::Draw_Data param = {
-                    .entity                 = sponza,
+                    .world                  = scene,
                     .resource_state         = resource_state,
+                    .transforms_id          = transforms_srv.index,
                     .camera_id              = camera_srv.index,
                     .anisotropic_sampler_id = anisotropic_sampler_descriptor.index
                 };

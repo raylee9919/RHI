@@ -400,7 +400,7 @@ namespace Engine
 
         result.index = index;
         result.my_heap = heap;
-        
+
         return result;
     }
 
@@ -563,7 +563,7 @@ namespace Engine
         }
     }
 
-    ENGINE_API DX12_Resource* dx12_alloc_resource(DX12_Device* device, DX12_Resource_Desc desc)
+    ENGINE_API DX12_Resource* dx12_alloc_resource(DX12_Device* device, DX12_Resource_Desc desc, D3D12_RESOURCE_STATES init_state)
     {
         DX12_Resource* result = nullptr;
         ID3D12Resource* resource = nullptr;
@@ -574,7 +574,6 @@ namespace Engine
             .CreationNodeMask     = 1,
             .VisibleNodeMask      = 1
         };
-        D3D12_RESOURCE_STATES init_state = D3D12_RESOURCE_STATE_COMMON;
         D3D12_RESOURCE_DESC res_desc;
         bool ok = false;
         bool should_clear = ((desc.resource_flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) ||

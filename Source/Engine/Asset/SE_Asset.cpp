@@ -4,7 +4,6 @@
 
 #include "Core/SE_Basics.h"
 #include "Core/SE_Log.h"
-
 #include "File/FileSystem.h"
 
 #include "ThirdParty/cgltf/Include/cgltf.h"
@@ -104,7 +103,47 @@ namespace Engine
         tangent->w = sign;
     }
 
-    ENGINE_API GLTF_Load_Result load_gltf(Asset_State* state, const String& path)
+    INTERNAL Entity* make_entity_from_cgltf_node(Scene* world,
+                                                 const Array<Mesh*>& meshes, const Array<cgltf_mesh*>& cgltf_meshes,
+                                                 cgltf_node* node, Entity* parent)
+    {
+        Entity* entity = world->alloc_entity();
+
+        if (parent) { parent->children.push_back(entity->id); }
+
+        // Bind mesh name if has one.
+        if (node->mesh) {
+            u32 index = 0;
+            for (auto* cmesh : cgltf_meshes) {
+                if (cmesh == node->mesh) {
+                    entity->mesh_name = meshes[index]->name;
+                    break;
+                }
+                index++;
+            }
+            CORE_ASSERT(entity->mesh_name != "");
+        }
+
+        // transform
+        if (node->has_translation) {
+            entity->position = vec3(node->translation[0], node->translation[1], node->translation[2]);
+        }
+        if (node->has_rotation) {
+            entity->orientation = Quaternion(node->rotation[3], node->rotation[0], node->rotation[1], node->rotation[2]);
+        }
+        if (node->has_scale) {
+            entity->scaling = vec3(node->scale[0], node->scale[1], node->scale[2]);
+        }
+
+        for (cgltf_size chi = 0; chi < node->children_count; ++chi) {
+            auto* child = node->children[chi];
+            make_entity_from_cgltf_node(world, meshes, cgltf_meshes, child, entity);
+        }
+
+        return entity;
+    }
+
+    ENGINE_API GLTF_Load_Result load_gltf(Scene* world, Asset_State* state, const String& path, bool flip_uv)
     {
         GLTF_Load_Result result = {};
         result.materials = nlohmann::json::array();
@@ -114,11 +153,11 @@ namespace Engine
         cgltf_data* data = nullptr;
 
         if (cgltf_parse_file(&opts, path.c_str(), &data) != cgltf_result_success) {
-            assert(!"failed to parse gltf file.");
+            CORE_ASSERT(!"failed to parse gltf file.");
         }
 
         if (cgltf_load_buffers(&opts, data, path.c_str()) != cgltf_result_success) {
-            assert(!"failed to load buffers from gltf file.");
+            CORE_ASSERT(!"failed to load buffers from gltf file.");
         }
 
 
@@ -170,26 +209,30 @@ namespace Engine
 
         // Meshes
         //
+        Array <cgltf_mesh*> cgltf_meshes;
         u32 num_meshes = (u32)data->meshes_count;
+
         for (u32 mi = 0; mi < num_meshes; ++mi) {
             Mesh* mesh = new Mesh;
-            cgltf_mesh* gl_mesh = &data->meshes[mi];
+            cgltf_mesh* cmesh = &data->meshes[mi];
+            cgltf_meshes.push_back(cmesh);
             String name = state->make_name(base_name + "_mesh_");
 
             // Primitive isn't a triangle/line in here. It's a mesh with its own material.
-            u32 num_prim = (u32)gl_mesh->primitives_count;
+            // a.k.a., mesh slice/submesh.
+            u32 num_prim = (u32)cmesh->primitives_count;
             for (u32 pi = 0; pi < num_prim; ++pi) {
                 Mesh_Slice* mesh_slice = new Mesh_Slice;
 
-                cgltf_primitive* prim = &gl_mesh->primitives[pi];
+                cgltf_primitive* prim = &cmesh->primitives[pi];
                 cgltf_primitive_type type = prim->type;
-                assert(type == cgltf_primitive_type_triangles);
+                CORE_ASSERT(type == cgltf_primitive_type_triangles);
 
                 cgltf_accessor* pos_acc    = cgltf_get_accessor_from_type(prim, cgltf_attribute_type_position);
                 cgltf_accessor* normal_acc = cgltf_get_accessor_from_type(prim, cgltf_attribute_type_normal);
                 cgltf_accessor* uv_acc     = cgltf_get_accessor_from_type(prim, cgltf_attribute_type_texcoord);
                 cgltf_accessor* tan_acc    = cgltf_get_accessor_from_type(prim, cgltf_attribute_type_tangent);
-                assert(pos_acc);
+                CORE_ASSERT(pos_acc);
 
                 bool should_generate_tangent = false;
                 u32 num_verts = (u32)pos_acc->count;
@@ -210,6 +253,9 @@ namespace Engine
 
                     if (uv_acc) {
                         vert.uv = cgltf_read_vec2_from_accessor(uv_acc, vi);
+                        if (flip_uv) { 
+                            vert.uv.y = 1.0f - vert.uv.y;
+                        }
                     } else {
                         vert.uv = vec2(0.f, 0.f);
                     }
@@ -228,8 +274,8 @@ namespace Engine
                         indices.push_back((uint32)cgltf_accessor_read_index(prim->indices, i));
                     }
                 } else {
-                    // Make an identity index buffer
-                    assert(num_verts % 3 == 0);
+                    // Make an identity index buffer, that is, identity buffer's always there.
+                    CORE_ASSERT(num_verts % 3 == 0);
                     indices.resize(num_verts);
                     for (uint32 i = 0; i < num_verts; ++i) {
                         indices[i] = i;
@@ -264,7 +310,7 @@ namespace Engine
                         .m_pUserData  = mesh_slice
                     };
 
-                    assert(genTangSpaceDefault(&ctx));
+                    CORE_ASSERT(genTangSpaceDefault(&ctx));
                 }
 
                 mesh->name = name;
@@ -272,6 +318,26 @@ namespace Engine
             }
 
             result.meshes.push_back(mesh);
+        }
+
+
+        // Scene
+        //
+        {
+            u32 num_scenes = (cgltf_size)data->scenes_count;
+            CORE_ASSERT(num_scenes == 1);
+
+            for (u32 sci = 0; sci < num_scenes; ++sci) {
+                auto* scene = &data->scenes[sci];
+                u32 num_nodes = (cgltf_size)scene->nodes_count;
+
+                // DFS
+                for (u32 ni = 0; ni < num_nodes; ++ni) {
+                    auto* root_node = scene->nodes[ni];
+                    Entity* entity = make_entity_from_cgltf_node(world, result.meshes, cgltf_meshes, root_node, nullptr);
+                    result.entities.push_back(entity);
+                }
+            }
         }
 
         cgltf_free(data);

@@ -12,14 +12,18 @@ namespace Engine
     {
         struct Push_Constants {
             u32 vertex_buffer_id;
+            u32 transform_id;
             u32 material_id;
+
+            u32 transforms_id;
             u32 camera_id;
             u32 anisotropic_sampler_id;
         };
 
         struct Draw_Data {
-            Entity* entity;
+            Scene* world;
             Resource_State* resource_state;
+            u32 transforms_id;
             u32 camera_id;
             u32 anisotropic_sampler_id;
         };

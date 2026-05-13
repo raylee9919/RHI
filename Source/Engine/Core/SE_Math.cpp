@@ -358,4 +358,35 @@ namespace Engine
 
         return m;
     }
+
+    ENGINE_API m4x4 to_m4x4(Xform xform)
+    {
+        m4x4 m;
+
+        vec3 t = xform.translation;
+        Quaternion r = xform.rotation;
+        vec3 s = xform.scale;
+
+        m._11 = 1.0f - 2.0f * (r.y * r.y + r.z * r.z);
+        m._12 = 2.0f * (r.x * r.y - r.z * r.w);
+        m._13 = 2.0f * (r.x * r.z + r.y * r.w);
+        m._14 = t.x;
+        m.rows[0].lane = _mm_mul_ps(m.rows[0].lane, _mm_setr_ps(s.x, s.x, s.x, 1));
+
+        m._21 = 2.0f * (r.x * r.y + r.z * r.w);
+        m._22 = 1.0f - 2.0f * (r.x * r.x + r.z * r.z);
+        m._23 = 2.0f * (r.y * r.z - r.x * r.w);
+        m._24 = t.y;
+        m.rows[1].lane = _mm_mul_ps(m.rows[1].lane, _mm_setr_ps(s.y, s.y, s.y, 1));
+
+        m._31 = 2.0f * (r.x * r.z - r.y * r.w);
+        m._32 = 2.0f * (r.y * r.z + r.x * r.w);
+        m._33 = 1.0f - 2.0f * (r.x * r.x + r.y * r.y);
+        m._34 = t.z;
+        m.rows[2].lane = _mm_mul_ps(m.rows[2].lane, _mm_setr_ps(s.z, s.z, s.z, 1));
+
+        m.rows[3].lane = _mm_setr_ps(0, 0, 0, 1);
+
+        return m;
+    }
 }

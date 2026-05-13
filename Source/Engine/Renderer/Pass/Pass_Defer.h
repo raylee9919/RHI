@@ -15,6 +15,7 @@ namespace Engine
             u32 normal_id;
             u32 uv_id;
             u32 material_id;
+
             u32 camera_id;
             u32 linear_sampler_id;
             u32 anisotropic_sampler_id;

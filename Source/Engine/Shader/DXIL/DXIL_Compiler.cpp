@@ -85,7 +85,7 @@ namespace Engine
             }
         }
 
-        ENGINE_API Compiled_Shader Shader_Compiler::compile(bool debug, void* source, u64 size, const char* entry, const char* target_profile)
+        ENGINE_API Compiled_Shader Shader_Compiler::compile(bool debug, void* source, u64 size, const String& source_name, const char* entry, const char* target_profile)
         {
             DxcBuffer source_buffer = {
                 .Ptr      = source,
@@ -102,6 +102,9 @@ namespace Engine
 
             WCHAR target_profile_wcstr[512] = {};
             swprintf_s(target_profile_wcstr, 512, L"%hs", target_profile);
+
+            WCHAR source_name_wcstr[512] = {};
+            swprintf_s(source_name_wcstr, 512, L"%hs", source_name.c_str());
 
             // Pack arguments.
             Array<LPCWCHAR> arguments;
@@ -122,6 +125,7 @@ namespace Engine
                     arguments.push_back(L"-O3"); // Optimization Level 3 (default)
                 }
                 arguments.push_back(DXC_ARG_ALL_RESOURCES_BOUND);
+                arguments.push_back(source_name_wcstr);
             }
 
 

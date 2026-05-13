@@ -4,7 +4,7 @@
 
 #include "Core/SE_Math.h"
 #include "Core/SE_String.h"
-
+#include "Scene/Entity.h"
 #include "RHI/DX12/DX12.h"
 
 #include "ThirdParty/json/Include/json.h"
@@ -68,7 +68,8 @@ namespace Engine
     struct GLTF_Load_Result {
         nlohmann::json materials; // array of materials jsons
         Array <Mesh*> meshes;
+        Array <Entity*> entities; // scene's root nodes
     };
 
-    ENGINE_API GLTF_Load_Result load_gltf(Asset_State* state, const String& path);
+    ENGINE_API GLTF_Load_Result load_gltf(struct Scene* scene, Asset_State* state, const String& path, bool flip_uv);
 }
