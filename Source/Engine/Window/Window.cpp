@@ -48,8 +48,8 @@ namespace Engine
 
     void Window::poll_events()
     {
-        memcpy(my_input_system->mouse_was_down, my_input_system->mouse_is_down, sizeof(my_input_system->mouse_was_down[0]) * ARRAY_COUNT(my_input_system->mouse_was_down));
-        memcpy(my_input_system->key_was_down, my_input_system->key_is_down, sizeof(my_input_system->key_was_down[0]) * ARRAY_COUNT(my_input_system->key_was_down));
+        memcpy(my_input_system->mouse_was_down, my_input_system->mouse_is_down, sizeof(my_input_system->mouse_was_down[0]) * count_of(my_input_system->mouse_was_down));
+        memcpy(my_input_system->key_was_down, my_input_system->key_is_down, sizeof(my_input_system->key_was_down[0]) * count_of(my_input_system->key_was_down));
 
         // Poll events
         SDL_Event event;
@@ -62,11 +62,15 @@ namespace Engine
 
             ImGuiIO& io = ImGui::GetIO();
 
-            if (event.type == SDL_EVENT_KEY_DOWN) {
-                my_input_system->key_is_down[KeyFromSDL(event.key.key)] = true;
-            }
-            if (event.type == SDL_EVENT_KEY_UP) {
-                my_input_system->key_is_down[KeyFromSDL(event.key.key)] = false;
+            if (!io.WantCaptureMouse) {
+                if (event.type == SDL_EVENT_KEY_DOWN) {
+                    my_input_system->key_is_down[KeyFromSDL(event.key.key)] = true;
+                }
+                if (event.type == SDL_EVENT_KEY_UP) {
+                    my_input_system->key_is_down[KeyFromSDL(event.key.key)] = false;
+                }
+            } else {
+                memset(my_input_system->key_is_down, 0, sizeof(my_input_system->key_is_down[0]) * count_of(my_input_system->key_is_down));
             }
 
             if (!io.WantCaptureMouse) {

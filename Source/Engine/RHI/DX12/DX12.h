@@ -72,9 +72,25 @@ namespace Engine
         u64                           ps_length;
     };
 
+    struct DX12_Compute_Pipeline_Desc {
+        ID3D12RootSignature*          root_signature;
+        void*                         bytecode;
+        u64                           length;
+    };
+
+    enum DX12_Pipeline_Type {
+        DX12_PIPELINE_TYPE_INVALID = 0,
+        DX12_PIPELINE_TYPE_GRAPHICS,
+        DX12_PIPELINE_TYPE_COMPUTE,
+    };
+
     struct DX12_Pipeline_State {
-        DX12_Graphics_Pipeline_Desc desc;
+        DX12_Pipeline_Type type  = DX12_PIPELINE_TYPE_INVALID;
         ID3D12PipelineState* pso = nullptr;
+        union {
+            DX12_Graphics_Pipeline_Desc graphics;
+            DX12_Compute_Pipeline_Desc  compute;
+        };
     };
 
     struct ENGINE_API DX12_Command_List {
@@ -96,9 +112,12 @@ namespace Engine
         void set_topology(D3D12_PRIMITIVE_TOPOLOGY topology);
         void set_render_target(u32 num_rtvs, DX12_Descriptor* rtvs, DX12_Descriptor* dsv);
         void set_index_buffer(DX12_Resource* resource);
-
         void draw(u32 num_vertices, u32 num_instances, u32 begin_vertex = 0, u32 begin_instance = 0);
         void draw_indexed(u32 num_indices_per_instance, u32 num_instances, u32 start_index = 0, int base_vertex = 0, u32 start_instance = 0);
+
+        void set_compute_root_signature(ID3D12RootSignature* root_signature);
+        void set_compute_root_constants(u32 root_parameter_index, u32 count, void* data);
+        void dispatch(u32 x, u32 y, u32 z);
     };
 
     struct DX12_Command_Queue {
@@ -206,6 +225,7 @@ namespace Engine
     ENGINE_API ID3D12RootSignature* dx12_create_bindless_root_signature(DX12_Device* device);
 
     ENGINE_API DX12_Pipeline_State dx12_create_graphics_pipeline_state(DX12_Device* device, const DX12_Graphics_Pipeline_Desc& desc);
+    ENGINE_API DX12_Pipeline_State dx12_create_compute_pipeline_state(DX12_Device* device, const DX12_Compute_Pipeline_Desc& desc);
 
     ENGINE_API D3D12_PRIMITIVE_TOPOLOGY dx12_to_primitive_topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
 
@@ -213,6 +233,7 @@ namespace Engine
     ENGINE_API void dx12_create_rtv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, D3D12_RENDER_TARGET_VIEW_DESC desc);
     ENGINE_API void dx12_create_dsv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, DXGI_FORMAT format);
     ENGINE_API void dx12_create_srv(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, DXGI_FORMAT view_format, u32 num_elements = 0, u32 stride_in_bytes = 0);
+    ENGINE_API void dx12_create_uav(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, DXGI_FORMAT view_format, u32 num_elements = 0, u32 stride_in_bytes = 0);
 
     ENGINE_API void dx12_upload_buffer(DX12_Device *device, DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list, DX12_Fence* fence, DX12_Resource* resource, void* data, u64 size);
 }

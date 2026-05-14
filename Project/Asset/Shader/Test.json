@@ -1,0 +1,5 @@
+{
+    "pipeline" : "Compute",
+    "name": "Test",
+    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader\\HLSL\\Test.hlsl"
+}

@@ -377,13 +377,13 @@ INTERNAL Material material_from_json(DX12_Device* device, DX12_Command_Queue* cm
     return mat;
 }
 
-void init_pipeline_state(DX12_Device* device, Shader_Compiler* compiler,
-                         DX12_Pipeline_State* out_pso,
-                         ID3D12RootSignature* root_signature,
-                         DXGI_FORMAT* rtv_formats, 
-                         bool has_depth, DXGI_FORMAT dsv_format,
-                         D3D12_CULL_MODE cull_mode,
-                         const String& shader_path)
+void init_graphics_pipeline(DX12_Device* device, Shader_Compiler* compiler,
+                            DX12_Pipeline_State* out_pso,
+                            ID3D12RootSignature* root_signature,
+                            DXGI_FORMAT* rtv_formats, 
+                            bool has_depth, DXGI_FORMAT dsv_format,
+                            D3D12_CULL_MODE cull_mode,
+                            const String& shader_path)
 {
     // read file.
     u64 length = read_entire_file(shader_path, nullptr);
@@ -487,94 +487,153 @@ void init_pipeline_state(DX12_Device* device, Shader_Compiler* compiler,
     delete [] source;
 }
 
+void init_compute_pipeline(DX12_Device* device, Shader_Compiler* compiler,
+                           DX12_Pipeline_State* out_pso,
+                           ID3D12RootSignature* root_signature,
+                           const String& shader_path)
+{
+    // read file.
+    u64 length = read_entire_file(shader_path, nullptr);
+    u8* source = new u8[length];
+    read_entire_file(shader_path, source);
+
+    // entries/profiles
+    const char* cs_entry   = "cs_main";
+    const char* cs_profile = "cs_6_6";
+
+    // compile and reflect.
+    auto compiled_cs   = compiler->compile(true, source, length, shader_path, cs_entry, cs_profile);
+    auto cs_reflection = compiler->reflect(compiled_cs.result);
+
+    // pso creation
+    DX12_Compute_Pipeline_Desc pso_desc = {
+        .root_signature = root_signature,
+        .bytecode       = compiled_cs.bytecode,
+        .length         = compiled_cs.length
+    };
+
+    *out_pso = dx12_create_compute_pipeline_state(device, pso_desc);
+
+    // Cleanup
+    cs_reflection.release();
+    compiled_cs.release();
+
+    delete [] source;
+}
+
+enum Pipeline_Type {
+    PIPELINE_TYPE_INVALID = 0,
+    PIPELINE_TYPE_GRAPHICS,
+    PIPELINE_TYPE_COMPUTE,
+};
+
 struct Shader_Asset {
-    String name;
-    String shader_path;
-    D3D12_CULL_MODE cull_mode;
+    Pipeline_Type       type;
+
+    // Graphics
+    String              name;
+    String              shader_path;
+    D3D12_CULL_MODE     cull_mode;
     Array <DXGI_FORMAT> render_target_formats;
-    bool has_depth;
-    DXGI_FORMAT depth_format;
+    bool                has_depth;
+    DXGI_FORMAT         depth_format;
+
+    // Compute
 };
 
 Shader_Asset shader_asset_from_file(const String& file_path) {
+    Shader_Asset result = {};
+
     std::ifstream f(file_path);
     nlohmann::json json = nlohmann::json::parse(f);
 
-
     // If key doesn't exist, it'll fail, which is neat.
-    auto render_targets = json["render_targets"];
-    String name         = json["name"];
-    String shader_path  = json["shader"];
-    String cull         = json["cull"];
-    String depth_format = json["depth_format"];
+    String pipeline    = json["pipeline"];
+    String name        = json["name"];
+    String shader_path = json["shader"];
 
+    result.name        = name;
+    result.shader_path = shader_path;
 
-    // Render target formats
-    Array <DXGI_FORMAT> formats;
-    for (auto& it : render_targets) {
-        DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
-        String str = it.get<String>();
-        if (str == "R32G32B32A32_FLOAT") {
-            format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-        } else if (str == "R8G8B8A8_UNORM") {
-            format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        } else if (str == "R8G8B8A8_UNORM_SRGB") {
-            format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-        } else if (str == "R8G8B8A8_SNORM") {
-            format = DXGI_FORMAT_R8G8B8A8_SNORM;
-        } else if (str == "R32G32_FLOAT") {
-            format = DXGI_FORMAT_R32G32_FLOAT;
-        } else if (str == "R32_UINT") {
-            format = DXGI_FORMAT_R32_UINT;
+    if (pipeline == "Graphics") {
+        auto render_targets = json["render_targets"];
+        String cull         = json["cull"];
+        String depth_format = json["depth_format"];
+
+        // Render target formats
+        Array <DXGI_FORMAT> formats;
+        for (auto& it : render_targets) {
+            DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+            String str = it.get<String>();
+            if (str == "R32G32B32A32_FLOAT") {
+                format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+            } else if (str == "R8G8B8A8_UNORM") {
+                format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            } else if (str == "R8G8B8A8_UNORM_SRGB") {
+                format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+            } else if (str == "R8G8B8A8_SNORM") {
+                format = DXGI_FORMAT_R8G8B8A8_SNORM;
+            } else if (str == "R32G32_FLOAT") {
+                format = DXGI_FORMAT_R32G32_FLOAT;
+            } else if (str == "R32_UINT") {
+                format = DXGI_FORMAT_R32_UINT;
+            } else {
+                CORE_ASSERT(0);
+            }
+            formats.push_back(format);
+        }
+
+        // Cull mode
+        D3D12_CULL_MODE cull_mode = D3D12_CULL_MODE_NONE;
+        if (cull == "none") {
+            cull_mode = D3D12_CULL_MODE_NONE;
+        } else if (cull == "back") {
+            cull_mode = D3D12_CULL_MODE_BACK;
+        } else if (cull == "front") {
+            cull_mode = D3D12_CULL_MODE_FRONT;
         } else {
             CORE_ASSERT(0);
         }
-        formats.push_back(format);
-    }
 
-    // Cull mode
-    D3D12_CULL_MODE cull_mode = D3D12_CULL_MODE_NONE;
-    if (cull == "none") {
-        cull_mode = D3D12_CULL_MODE_NONE;
-    } else if (cull == "back") {
-        cull_mode = D3D12_CULL_MODE_BACK;
-    } else if (cull == "front") {
-        cull_mode = D3D12_CULL_MODE_FRONT;
-    } else {
-        CORE_ASSERT(0);
-    }
+        // Depth
+        bool has_depth = true;
+        DXGI_FORMAT depth = DXGI_FORMAT_UNKNOWN;
+        if (depth_format == "none") {
+            has_depth = false;
+        } else if (depth_format == "D24S8") {
+            depth = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        } else if (depth_format == "D32") {
+            depth = DXGI_FORMAT_D32_FLOAT;
+        } else {
+            CORE_ASSERT(0);
+        }
 
-    // Depth
-    bool has_depth = true;
-    DXGI_FORMAT depth = DXGI_FORMAT_UNKNOWN;
-    if (depth_format == "none") {
-        has_depth = false;
-    } else if (depth_format == "D24S8") {
-        depth = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    } else if (depth_format == "D32") {
-        depth = DXGI_FORMAT_D32_FLOAT;
-    } else {
-        CORE_ASSERT(0);
-    }
-
-    Shader_Asset result = {};
-    {
-        result.name                  = name;
-        result.shader_path           = shader_path;
+        result.type                  = PIPELINE_TYPE_GRAPHICS,
         result.cull_mode             = cull_mode;
         result.render_target_formats = std::move(formats);
         result.has_depth             = has_depth;
         result.depth_format          = depth;
+
+    } else if (pipeline == "Compute") {
+        result.type = PIPELINE_TYPE_COMPUTE;
+    } else {
+        CORE_ASSERT(!"Unknown pipeline type");
     }
 
     return result;
 }
 
 void init_pipeline_state_from_shader_asset(DX12_Device* device, Shader_Compiler* compiler, DX12_Pipeline_State* out_pso, ID3D12RootSignature* bindless_root_signature, const Shader_Asset& asset) {
-    init_pipeline_state(device, compiler, out_pso, bindless_root_signature,
-                        (DXGI_FORMAT*)asset.render_target_formats.data(), 
-                        asset.has_depth, asset.depth_format, 
-                        asset.cull_mode, asset.shader_path);
+    if (asset.type == PIPELINE_TYPE_GRAPHICS) {
+        init_graphics_pipeline(device, compiler, out_pso, bindless_root_signature,
+                               (DXGI_FORMAT*)asset.render_target_formats.data(), 
+                               asset.has_depth, asset.depth_format, 
+                               asset.cull_mode, asset.shader_path);
+    } else if (asset.type == PIPELINE_TYPE_COMPUTE) {
+        init_compute_pipeline(device, compiler, out_pso, bindless_root_signature, asset.shader_path);
+    } else {
+        CORE_ASSERT(!"Unknown pipeline type");
+    }
 }
 
 void deinit_pipeline_state(DX12_Pipeline_State* pso) {
@@ -643,6 +702,12 @@ int main()
 
     auto* cmd_list = new DX12_Command_List;
     assert(dx12_init_command_list(device, cmd_list, D3D12_COMMAND_LIST_TYPE_DIRECT));
+
+    auto* compute_queue = new DX12_Command_Queue;
+    assert(dx12_init_command_queue(device, compute_queue, D3D12_COMMAND_LIST_TYPE_COMPUTE));
+
+    auto* compute_list = new DX12_Command_List;
+    assert(dx12_init_command_list(device, compute_list, D3D12_COMMAND_LIST_TYPE_COMPUTE));
 
     auto* fence = new DX12_Fence;
     assert(dx12_init_fence(device, fence));
@@ -776,10 +841,15 @@ int main()
         if (entry.is_regular_file() && entry.path().extension() == ".json") {
             String file = entry.path().string();
             auto shader_asset = shader_asset_from_file(file);
+
             auto* shader = new DX12_Pipeline_State;
             init_pipeline_state_from_shader_asset(device, compiler, shader, bindless_root_signature, shader_asset);
 
-            shader_table[shader_asset.name] = shader;
+            if (!shader_table.contains(shader_asset.name)) {
+                shader_table[shader_asset.name] = shader;
+            } else  {
+                CORE_ASSERT(0);
+            }
         }
     }
 
@@ -868,6 +938,8 @@ int main()
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    editor->font_body = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf"); // @Temporary
+    ImGui::PushFont(editor->font_body);
   
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -900,6 +972,11 @@ int main()
         };
     }
     ImGui_ImplDX12_Init(&init_info);
+
+
+    // @Temporary:
+    DX12_Descriptor tmp_uav = dx12_alloc_descriptor(srv_heap);
+    dx12_create_uav(device, defer_resource->resource, &tmp_uav, defer_resource->resource->desc.texture.format);
 
 
 
@@ -979,6 +1056,21 @@ int main()
                 defer_pass->draw(cmd_list, &param);
             }
 
+            // @Temporary:
+            if (0) {
+                cmd_list->native_cmd_list->SetComputeRootSignature(bindless_root_signature);
+                cmd_list->set_pipeline_state(shader_table["Test"]);
+
+                cmd_list->transition_barrier(defer_resource->resource, 0, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                u32 tex_id = tmp_uav.index;
+                cmd_list->set_graphics_root_constants(0, sizeof(u32) >> 2, &tex_id);
+                cmd_list->set_compute_root_constants(0, 1, &tex_id);
+
+                u32 w = defer_resource->resource->desc.texture.width;
+                u32 h = defer_resource->resource->desc.texture.height;
+                cmd_list->dispatch((w + 7) / 8, (h + 7) / 8, 1);
+            }
+
             cmd_list->set_graphics_root_signature(bindless_root_signature);
             {
                 Blit_Pass::Draw_Data param = {
@@ -990,6 +1082,7 @@ int main()
 
             
             ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd_list->native_cmd_list);
+
 
 
             cmd_list->transition_barrier(blit_output_resource->resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE);

@@ -18,29 +18,25 @@ namespace Engine
 
             switch (type)
             {
-                case D3D_REGISTER_COMPONENT_UNKNOWN:
-                {
+                case D3D_REGISTER_COMPONENT_UNKNOWN: {
                     format = DXGI_FORMAT_UNKNOWN;
                 } break;
 
-                case D3D_REGISTER_COMPONENT_FLOAT32:
-                {
+                case D3D_REGISTER_COMPONENT_FLOAT32: {
                     if      (mask == 0x1) { format = DXGI_FORMAT_R32_FLOAT;          }
                     else if (mask == 0x3) { format = DXGI_FORMAT_R32G32_FLOAT;       }
                     else if (mask == 0x7) { format = DXGI_FORMAT_R32G32B32_FLOAT;    }
                     else if (mask == 0xf) { format = DXGI_FORMAT_R32G32B32A32_FLOAT; }
                 } break;
 
-                case D3D_REGISTER_COMPONENT_UINT32:
-                {
+                case D3D_REGISTER_COMPONENT_UINT32: {
                     if      (mask == 0x1) { format = DXGI_FORMAT_R32_UINT;            }
                     else if (mask == 0x3) { format = DXGI_FORMAT_R32G32_UINT;         }
                     else if (mask == 0x7) { format = DXGI_FORMAT_R32G32B32_UINT;      }
                     else if (mask == 0xf) { format = DXGI_FORMAT_R32G32B32A32_UINT;   }
                 } break;
 
-                case D3D_REGISTER_COMPONENT_SINT32:
-                {
+                case D3D_REGISTER_COMPONENT_SINT32: {
                     if      (mask == 0x1) { format = DXGI_FORMAT_R32_SINT;            }
                     else if (mask == 0x3) { format = DXGI_FORMAT_R32G32_SINT;         }
                     else if (mask == 0x7) { format = DXGI_FORMAT_R32G32B32_SINT;      }
@@ -106,7 +102,8 @@ namespace Engine
             WCHAR source_name_wcstr[512] = {};
             swprintf_s(source_name_wcstr, 512, L"%hs", source_name.c_str());
 
-            // Pack arguments.
+            // Pack arguments. Use "-" instead of "/".
+            // https://simoncoenen.com/blog/programming/graphics/DxcCompiling
             Array<LPCWCHAR> arguments;
             {
                 arguments.push_back(L"-E");

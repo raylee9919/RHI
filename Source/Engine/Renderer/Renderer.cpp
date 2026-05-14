@@ -39,7 +39,7 @@ namespace Engine
     {
         Pass_Resource* result = new Pass_Resource;
 
-        D3D12_RESOURCE_FLAGS flags = dsv_heap ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL : D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+        D3D12_RESOURCE_FLAGS flags = dsv_heap ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL : D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
         DX12_Resource_Desc desc = { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, 
             .resource_flags = flags,

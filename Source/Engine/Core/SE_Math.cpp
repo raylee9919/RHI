@@ -169,7 +169,7 @@ namespace Engine
         return m;
     }
 
-    m3x3 operator -= (m3x3& L, const m3x3& R) {
+    m3x3& operator -= (m3x3& L, const m3x3& R) {
         L._11 = L._11 - R._11;
         L._21 = L._21 - R._21;
         L._31 = L._31 - R._31;

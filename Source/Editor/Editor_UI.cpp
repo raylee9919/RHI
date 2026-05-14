@@ -102,7 +102,7 @@ namespace Engine
                 // Orientation
                 ImGui::Text("Rotation");
                 vec3 orientation = to_degree(euler_from_quaternion(entity->orientation));
-                ImGui::DragFloat3("##Orientation", &orientation.x, 0.01f, -360.f, 360.f, "%.2f");
+                ImGui::DragFloat3("##Orientation", &orientation.x, 0.1f, -360.f, 360.f, "%.2f");
                 entity->orientation = quaternion_from_euler(to_radian(orientation));
 
                 // Scale
@@ -121,6 +121,7 @@ namespace Engine
         if (entity) {
             SetRect(viewport_x, viewport_y, viewport_width, viewport_height);
 
+            // @Temporary:
             if (ImGui::IsKeyPressed(ImGuiKey_1)) { editor->current_gizmo_operation = OPERATION::TRANSLATE; }
             if (ImGui::IsKeyPressed(ImGuiKey_2)) { editor->current_gizmo_operation = OPERATION::ROTATE;    }
             if (ImGui::IsKeyPressed(ImGuiKey_3)) { editor->current_gizmo_operation = OPERATION::SCALE;     }
@@ -144,9 +145,9 @@ namespace Engine
                 R[1] = to_radian(R[1]);
                 R[2] = to_radian(R[2]);
 
-                entity->position = vec3(T[0], T[1], T[2]);
+                entity->position    = vec3(T[0], T[1], T[2]);
                 entity->orientation = quaternion_from_euler(vec3(R[0], R[1], R[2]));
-                entity->scaling = vec3(S[0], S[1], S[2]);
+                entity->scaling     = vec3(S[0], S[1], S[2]);
             }
         }
     }
@@ -155,21 +156,21 @@ namespace Engine
     {
         ImGuiStyle& Style = ImGui::GetStyle();
 
-        const float Hue = 0.0f; // [0,1] range.
-        const float Saturation = 1.0f; // [0,6] range.
+        const float Hue              = 0.0f; // [0,1] range.
+        const float Saturation       = 1.0f; // [0,6] range.
         const float SaturationAccent = 1.0f; // [0,6] range.
-        const float Transparency = 0.95f;
-        const float BorderSize = 0.0f;
+        const float Transparency     = 0.95f;
+        const float BorderSize       = 0.0f;
 
-        Style.FrameBorderSize = BorderSize;
-        Style.ImageBorderSize = BorderSize;
-        Style.TabBorderSize = BorderSize;
-        Style.TabBarBorderSize = 3.0f;
-        Style.WindowRounding = 4.0f;
-        Style.ChildRounding = 4.0f;
-        Style.FrameRounding = 4.0f;
-        Style.GrabRounding = 4.0f;
-        Style.TabRounding = 4.0f;
+        Style.FrameBorderSize   = BorderSize;
+        Style.ImageBorderSize   = BorderSize;
+        Style.TabBorderSize     = BorderSize;
+        Style.TabBarBorderSize  = 3.0f;
+        Style.WindowRounding    = 4.0f;
+        Style.ChildRounding     = 4.0f;
+        Style.FrameRounding     = 4.0f;
+        Style.GrabRounding      = 4.0f;
+        Style.TabRounding       = 4.0f;
 
         ImVec4 TextColor{1.000f, 1.000f, 1.000f, 1.000f};
         ImVec4 TextDimmedColor{0.357f, 0.482f, 0.549f, 1.000f};

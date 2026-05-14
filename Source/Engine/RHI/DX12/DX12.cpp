@@ -544,6 +544,21 @@ namespace Engine
         native_cmd_list->DrawIndexedInstanced(num_indices_per_instance, num_instances, start_index, base_vertex, start_instance);
     }
 
+    void DX12_Command_List::set_compute_root_signature(ID3D12RootSignature* root_signature)
+    {
+        native_cmd_list->SetComputeRootSignature(root_signature);
+    }
+
+    void DX12_Command_List::set_compute_root_constants(u32 root_parameter_index, u32 count, void* data)
+    {
+        native_cmd_list->SetComputeRoot32BitConstants(root_parameter_index, count, data, 0);
+    }
+
+    void DX12_Command_List::dispatch(u32 x, u32 y, u32 z)
+    {
+        native_cmd_list->Dispatch(x ,y, z);
+    }
+
     ENGINE_API void dx12_execute_command_list(DX12_Command_Queue* cmd_queue, DX12_Command_List* cmd_list)
     {
         ID3D12CommandList* lists[] = { cmd_list->native_cmd_list };
@@ -821,12 +836,40 @@ namespace Engine
         pso_desc.DSVFormat        = desc.dsv_format;
         memcpy(pso_desc.RTVFormats, desc.rtv_formats, sizeof(desc.rtv_formats));
 
-        if (SUCCEEDED(device->native_device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&pso)))) {
-
+        if (FAILED(device->native_device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&pso)))) {
+            CORE_ASSERT(!"Do error handling");
         }
 
-        result.pso = pso;
-        result.desc = desc;
+        result.type     = DX12_PIPELINE_TYPE_GRAPHICS;
+        result.pso      = pso;
+        result.graphics = desc;
+
+        return result;
+    }
+
+    ENGINE_API DX12_Pipeline_State dx12_create_compute_pipeline_state(DX12_Device* device, const DX12_Compute_Pipeline_Desc& desc)
+    {
+        DX12_Pipeline_State result = {};
+        ID3D12PipelineState* pso = nullptr;
+
+        D3D12_COMPUTE_PIPELINE_STATE_DESC compute_desc = {
+            .pRootSignature = desc.root_signature,
+            .CS = {
+                .pShaderBytecode = desc.bytecode,
+                .BytecodeLength  = desc.length,
+            },
+            .NodeMask  = 0, // single GPU
+            .CachedPSO = {},
+            .Flags     = D3D12_PIPELINE_STATE_FLAG_NONE
+        };
+
+        if (FAILED(device->native_device->CreateComputePipelineState(&compute_desc, IID_PPV_ARGS(&pso)))) {
+            CORE_ASSERT(!"Do error handling");
+        }
+
+        result.type    = DX12_PIPELINE_TYPE_COMPUTE;
+        result.pso     = pso;
+        result.compute = desc;
 
         return result;
     }
@@ -859,14 +902,29 @@ namespace Engine
         if (resource->desc.type == DX12_RESOURCE_TYPE_BUFFER) {
             auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::StructuredBuffer(num_elements, stride_in_bytes);
             device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
-
         } else if (resource->desc.type == DX12_RESOURCE_TYPE_TEXTURE_2D) {
             auto tex = resource->desc.texture;
             auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::Tex2D(view_format, tex.mip_levels);
             device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
-
         } else {
-            assert(0);
+            CORE_ASSERT(0);
+        }
+    }
+
+    ENGINE_API void dx12_create_uav(DX12_Device* device, DX12_Resource* resource, DX12_Descriptor* descriptor, DXGI_FORMAT view_format, u32 num_elements, u32 stride_in_bytes)
+    {
+        ID3D12Resource* counter_resource = nullptr;
+
+        if (resource->desc.type == DX12_RESOURCE_TYPE_BUFFER) {
+            auto uav_desc = CD3DX12_UNORDERED_ACCESS_VIEW_DESC::StructuredBuffer(num_elements, stride_in_bytes);
+            device->native_device->CreateUnorderedAccessView(resource->native_resource, counter_resource, &uav_desc, descriptor->cpu_handle);
+        } else if (resource->desc.type == DX12_RESOURCE_TYPE_TEXTURE_2D) {
+            auto tex = resource->desc.texture;
+            CORE_ASSERT(tex.mip_levels == 1); // @Temporary
+            auto uav_desc = CD3DX12_UNORDERED_ACCESS_VIEW_DESC::Tex2D(view_format, 0);
+            device->native_device->CreateUnorderedAccessView(resource->native_resource, counter_resource, &uav_desc, descriptor->cpu_handle);
+        } else {
+            CORE_ASSERT(!"Unhandled type");
         }
     }
 

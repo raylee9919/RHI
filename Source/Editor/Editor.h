@@ -16,5 +16,6 @@ namespace Engine
         Entity::ID selected_entity_id;
         bool show_ui = true;
         ImGuizmo::OPERATION current_gizmo_operation = ImGuizmo::OPERATION::TRANSLATE;
+        ImFont* font_body = nullptr;
     };
 }

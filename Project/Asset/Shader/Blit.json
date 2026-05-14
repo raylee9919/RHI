@@ -1,6 +1,7 @@
 {
+    "pipeline" : "Graphics",
     "name": "Blit",
-    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader/HLSL/Blit.shader",
+    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader/HLSL/Blit.hlsl",
     "cull" : "none",
     "render_targets" : [
         "R8G8B8A8_UNORM"

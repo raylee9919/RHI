@@ -125,7 +125,7 @@ namespace Engine
     ENGINE_API m3x3 operator * (f32 L, const m3x3& R);
     ENGINE_API m3x3 operator + (const m3x3& L, const m3x3& R);
     ENGINE_API m3x3 operator - (const m3x3& L, const m3x3& R);
-    ENGINE_API m3x3 operator -= (m3x3& L, const m3x3& R);
+    ENGINE_API m3x3& operator -= (m3x3& L, const m3x3& R);
     ENGINE_API m3x3 operator * (const m3x3& L, const m3x3& R);
     ENGINE_API m4x4 operator * (const m4x4& l, const m4x4& r);
     ENGINE_API vec4 operator * (const m4x4& l, const vec4& r);
