@@ -1,5 +1,5 @@
 {
     "pipeline" : "Compute",
-    "name": "Test",
+    "name": "BloomDownsample",
     "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader\\HLSL\\BloomDownsample.hlsl"
 }

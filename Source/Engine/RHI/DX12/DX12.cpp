@@ -643,6 +643,8 @@ namespace Engine
             assert("invalid resource creation type.");
         }
 
+        //resource->SetName(desc.name);
+
         if (ok) {
             result = new DX12_Resource;
             result->desc            = desc;

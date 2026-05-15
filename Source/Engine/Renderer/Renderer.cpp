@@ -35,6 +35,8 @@ namespace Engine
         if (!resource_table.contains(name)) {
             auto* resource = dx12_alloc_resource(device, desc);
             resource_table[name] = resource;
+
+            resource->native_resource->SetName(std::wstring(name.begin(), name.end()).c_str());
         } else {
             CORE_ASSERT(0, "Name already used.");
         }

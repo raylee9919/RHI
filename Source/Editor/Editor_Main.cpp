@@ -852,6 +852,7 @@ int main()
 
     // Load shader meta data assets from disk.
     //
+    // @Todo: GETTER??
     Hash_Table <String, DX12_Pipeline_State*> shader_table;
 
     for (const auto& entry : file_sys::directory_iterator(shader_dir)) {
@@ -901,49 +902,53 @@ int main()
     resource_state->alloc_pass_resource(        "BlitOut", device, srv_heap, nullptr, rtv_heap,  nullptr);
 
 
+
     auto* gbuffer_pass = new GBuffer_Pass;
     {
-        gbuffer_pass->pipeline_state  = shader_table["GBuffer"];
-        gbuffer_pass->viewport_width  = tex_width;
-        gbuffer_pass->viewport_height = tex_height;
-        gbuffer_pass->scissor_width   = tex_width;
-        gbuffer_pass->scissor_height  = tex_height;
-        gbuffer_pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+        auto* pass = gbuffer_pass;
+        pass->pipeline_state  = shader_table["GBuffer"];
+        pass->viewport_width  = tex_width;
+        pass->viewport_height = tex_height;
+        pass->scissor_width   = tex_width;
+        pass->scissor_height  = tex_height;
+        pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
-        gbuffer_pass->outputs.push_back("GBufferPosition");
-        gbuffer_pass->outputs.push_back("GBufferNormal");
-        gbuffer_pass->outputs.push_back("GBufferUV");
-        gbuffer_pass->outputs.push_back("GBufferMaterial");
-        gbuffer_pass->depth_target = "Depth";
+        pass->outputs.push_back("GBufferPosition");
+        pass->outputs.push_back("GBufferNormal");
+        pass->outputs.push_back("GBufferUV");
+        pass->outputs.push_back("GBufferMaterial");
+        pass->depth_target = "Depth";
     }
 
     auto* defer_pass = new Defer_Pass;
     {
-        defer_pass->pipeline_state  = shader_table["Defer"];
-        defer_pass->viewport_width  = tex_width;
-        defer_pass->viewport_height = tex_height;
-        defer_pass->scissor_width   = tex_width;
-        defer_pass->scissor_height  = tex_height;
-        defer_pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+        auto* pass = defer_pass;
+        pass->pipeline_state  = shader_table["Defer"];
+        pass->viewport_width  = tex_width;
+        pass->viewport_height = tex_height;
+        pass->scissor_width   = tex_width;
+        pass->scissor_height  = tex_height;
+        pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
-        defer_pass->inputs.push_back("GBufferPosition");
-        defer_pass->inputs.push_back("GBufferNormal");
-        defer_pass->inputs.push_back("GBufferUV");
-        defer_pass->inputs.push_back("GBufferMaterial");
-        defer_pass->outputs.push_back("Color");
+        pass->inputs.push_back("GBufferPosition");
+        pass->inputs.push_back("GBufferNormal");
+        pass->inputs.push_back("GBufferUV");
+        pass->inputs.push_back("GBufferMaterial");
+        pass->outputs.push_back("Color");
     }
 
     auto* blit_pass = new Blit_Pass;
     {
-        blit_pass->pipeline_state = shader_table["Blit"];
-        blit_pass->viewport_width  = tex_width;
-        blit_pass->viewport_height = tex_height;
-        blit_pass->scissor_width   = tex_width;
-        blit_pass->scissor_height  = tex_height;
-        blit_pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+        auto* pass = blit_pass;
+        pass->pipeline_state = shader_table["Blit"];
+        pass->viewport_width  = tex_width;
+        pass->viewport_height = tex_height;
+        pass->scissor_width   = tex_width;
+        pass->scissor_height  = tex_height;
+        pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
-        blit_pass->inputs.push_back("Color");
-        blit_pass->outputs.push_back("BlitOut");
+        pass->inputs.push_back("Color");
+        pass->outputs.push_back("BlitOut");
     }
     // @Todo:
     // I'm implicitly connecting blit_output_resource to swap chain's current 
@@ -1000,8 +1005,13 @@ int main()
 
 
     // @Temporary:
-    //DX12_Descriptor tmp_uav = dx12_alloc_descriptor(srv_heap);
-    //dx12_create_uav(device, defer_resource->resource, &tmp_uav, defer_resource->resource->desc.texture.format);
+    resource_state->alloc_resource("Color2", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, .texture = { .format = DXGI_FORMAT_R8G8B8A8_UNORM, .width = tex_width>>1, .height = tex_height>>1, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
+    auto* bloom_in_resource  = resource_state->get_resource("Color");
+    auto* bloom_out_resource = resource_state->get_resource("Color2");
+    DX12_Descriptor bloom_in_srv  = dx12_alloc_descriptor(srv_heap);
+    DX12_Descriptor bloom_out_uav = dx12_alloc_descriptor(srv_heap);
+    dx12_create_srv(device,  bloom_in_resource,  &bloom_in_srv,  bloom_in_resource->desc.texture.format);
+    dx12_create_uav(device, bloom_out_resource, &bloom_out_uav, bloom_out_resource->desc.texture.format);
 
 
 
@@ -1074,27 +1084,33 @@ int main()
             }
 
             // @Temporary:
-#if 0
-                cmd_list->native_cmd_list->SetComputeRootSignature(bindless_root_signature);
+#if 1
+            {
+                cmd_list->set_compute_root_signature(bindless_root_signature);
                 cmd_list->set_pipeline_state(shader_table["BloomDownsample"]);
 
                 struct Push {
-                    u32 input;
-                    u32 output;
+                    u32 input_srv;
+                    u32 output_uav;
                     u32 bilinear_clamp;
                 } push = {
-                    .input          = tmp_uav.index,
-                    .output         = tmp_uav.index,
+                    .input_srv      = bloom_in_srv.index,
+                    .output_uav     = bloom_out_uav.index,
                     .bilinear_clamp = bilinear_clamp.index
                 };
+                cmd_list->set_compute_root_constants(0, sizeof(push) >> 2, &push);
 
-                cmd_list->transition_barrier(defer_resource->resource, 0, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-                cmd_list->set_graphics_root_constants(0, sizeof(Push) >> 2, &push);
-                cmd_list->set_compute_root_constants(0, 1, &push);
+                cmd_list->transition_barrier(bloom_in_resource,  0, D3D12_RESOURCE_STATE_COMMON);
+                cmd_list->transition_barrier(bloom_out_resource, 0, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-                u32 w = defer_resource->resource->desc.texture.width;
-                u32 h = defer_resource->resource->desc.texture.height;
+                u32 w = bloom_out_resource->desc.texture.width;
+                u32 h = bloom_out_resource->desc.texture.height;
                 cmd_list->dispatch((w + 7) / 8, (h + 7) / 8, 1);
+
+                cmd_list->transition_barrier(bloom_out_resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                cmd_list->transition_barrier(bloom_in_resource, 0, D3D12_RESOURCE_STATE_COPY_DEST);
+                cmd_list->native_cmd_list->CopyResource(bloom_in_resource->native_resource, bloom_out_resource->native_resource);
+            }
 #endif
 
             cmd_list->set_graphics_root_signature(bindless_root_signature);
@@ -1115,7 +1131,6 @@ int main()
             cmd_list->transition_barrier(final_resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE);
             cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_COPY_DEST);
             cmd_list->native_cmd_list->CopyResource(swap_chain->get_current_resource()->native_resource, final_resource->native_resource);
-            cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_COPY_SOURCE);
         }
         cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_PRESENT);
         cmd_list->end();
