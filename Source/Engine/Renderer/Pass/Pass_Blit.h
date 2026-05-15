@@ -12,13 +12,13 @@ namespace Engine
     {
         struct Push_Constants {
             u32 color_id;
-            u32 linear_sampler_id;
+            u32 linear_id;
         };
 
         struct Draw_Data {
-            u32 linear_sampler_id;
+            u32 linear_id;
         };
 
-        virtual void draw(DX12_Command_List* cmd_list, void* param) override;
+        void execute(Resource_State* resource_state, DX12_Command_List* cmd_list, Draw_Data data);
     };
 }

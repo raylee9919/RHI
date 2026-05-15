@@ -37,16 +37,12 @@ namespace Engine
         }
     }
 
-    void GBuffer_Pass::draw(DX12_Command_List* cmd_list, void* param)
+    void GBuffer_Pass::execute(Resource_State* resource_state, DX12_Command_List* cmd_list, Scene* world, u32 transforms_id, u32 camera_id, u32 anisotropic_id)
     {
-        auto* data = (Draw_Data*)param;
-        auto* resource_state = data->resource_state;
-        auto* world = data->world;
-
         for (auto id : world->root->children) {
             auto* e = world->get_entity(id);
             if (e) {
-                gbuffer_pass_dfs(e, world, resource_state, cmd_list, data->transforms_id, data->camera_id, data->anisotropic_sampler_id);
+                gbuffer_pass_dfs(e, world, resource_state, cmd_list, transforms_id, camera_id, anisotropic_id);
             }
         }
     }

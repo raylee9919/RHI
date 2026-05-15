@@ -28,6 +28,6 @@ namespace Engine
             u32 anisotropic_sampler_id;
         };
 
-        virtual void draw(DX12_Command_List* cmd_list, void* param) override;
+        void execute(Resource_State* resource_state, DX12_Command_List* cmd_list, Scene* world, u32 transforms_id, u32 camera_id, u32 anisotropic_id);
     };
 }

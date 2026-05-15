@@ -7,13 +7,11 @@
 
 namespace Engine
 {
-    void Blit_Pass::draw(DX12_Command_List* cmd_list, void* param)
+    void Blit_Pass::execute(Resource_State* resource_state, DX12_Command_List* cmd_list, Draw_Data data)
     {
-        auto* data = (Draw_Data*)param;
-
         Push_Constants push = {
-            .color_id          = inputs[0]->get_srv_index(),
-            .linear_sampler_id = data->linear_sampler_id
+            .color_id  = resource_state->get_pass_resource(inputs[0]).get_srv_index(),
+            .linear_id = data.linear_id
         };
 
         cmd_list->set_graphics_root_constants(0u, sizeof(push) >> 2, &push);

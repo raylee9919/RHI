@@ -23,10 +23,10 @@ namespace Engine
 
         struct Draw_Data {
             u32 camera_id;
-            u32 linear_sampler_id;
-            u32 anisotropic_sampler_id;
+            u32 linear_id;
+            u32 anisotropic_id;
         };
 
-        virtual void draw(DX12_Command_List* cmd_list, void* param) override;
+        void execute(Resource_State* resource_state, DX12_Command_List* cmd_list, Draw_Data data);
     };
 }

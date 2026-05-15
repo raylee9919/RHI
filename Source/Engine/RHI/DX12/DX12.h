@@ -151,14 +151,13 @@ namespace Engine
         D3D12_HEAP_FLAGS        heap_flags        = D3D12_HEAP_FLAG_NONE;
         D3D12_RESOURCE_FLAGS    resource_flags    = D3D12_RESOURCE_FLAG_NONE;
 
-        // Ignored unless one of resource_flags is RTV or DSV.
-        bool                    do_clear = false;
-        D3D12_CLEAR_VALUE       clear_value = {};
-
         union {
             DX12_Resource_Desc_Buffer  buffer;
             DX12_Resource_Desc_Texture texture;
         };
+
+        bool                    do_clear = false;
+        D3D12_CLEAR_VALUE       clear_value = {};
     };
 
     struct DX12_Resource {

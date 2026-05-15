@@ -577,6 +577,8 @@ Shader_Asset shader_asset_from_file(const String& file_path) {
                 format = DXGI_FORMAT_R32G32_FLOAT;
             } else if (str == "R32_UINT") {
                 format = DXGI_FORMAT_R32_UINT;
+            } else if (str == "R16_UINT") {
+                format = DXGI_FORMAT_R16_UINT;
             } else {
                 CORE_ASSERT(0);
             }
@@ -814,6 +816,21 @@ int main()
         device->native_device->CreateSampler(&desc, linear_sampler_descriptor.cpu_handle);
     }
 
+    auto bilinear_clamp = dx12_alloc_descriptor(sampler_heap);
+    {
+        D3D12_SAMPLER_DESC desc = {
+            .Filter         = D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+            .AddressU       = D3D12_TEXTURE_ADDRESS_MODE_CLAMP, 
+            .AddressV       = D3D12_TEXTURE_ADDRESS_MODE_CLAMP, 
+            .AddressW       = D3D12_TEXTURE_ADDRESS_MODE_CLAMP, 
+            .MipLODBias     = 0.f,
+            .ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER,
+            .MinLOD         = 0.f,
+            .MaxLOD         = 1e10f
+        };
+        device->native_device->CreateSampler(&desc, bilinear_clamp.cpu_handle);
+    }
+
     // @Temporary: Create linear sampler.
     auto anisotropic_sampler_descriptor = dx12_alloc_descriptor(sampler_heap);
     {
@@ -865,15 +882,23 @@ int main()
     dx12_create_srv(device, transforms_resource, &transforms_srv, DXGI_FORMAT_UNKNOWN, max_transforms, stride);
 
 
-    // Make pass resources
+    // Alloc resources
     //
-    auto* gbuffer_position_resource = create_pass_resource(device, srv_heap, rtv_heap, nullptr,  DXGI_FORMAT_R32G32B32A32_FLOAT, tex_width, tex_height);
-    auto* gbuffer_normal_resource   = create_pass_resource(device, srv_heap, rtv_heap, nullptr,      DXGI_FORMAT_R8G8B8A8_SNORM, tex_width, tex_height);
-    auto* gbuffer_uv_resource       = create_pass_resource(device, srv_heap, rtv_heap, nullptr,        DXGI_FORMAT_R32G32_FLOAT, tex_width, tex_height);
-    auto* gbuffer_material_resource = create_pass_resource(device, srv_heap, rtv_heap, nullptr,            DXGI_FORMAT_R32_UINT, tex_width, tex_height);
-    auto* gbuffer_depth             = create_pass_resource(device, nullptr, nullptr,  dsv_heap,           DXGI_FORMAT_D32_FLOAT, tex_width, tex_height);
-    auto* defer_resource            = create_pass_resource(device, srv_heap, rtv_heap, nullptr,      DXGI_FORMAT_R8G8B8A8_UNORM, tex_width, tex_height);
-    auto* blit_output_resource      = create_pass_resource(device, srv_heap, rtv_heap, nullptr,      DXGI_FORMAT_R8G8B8A8_UNORM, tex_width, tex_height);
+    resource_state->alloc_resource("GBufferPosition", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, .texture = { .format = DXGI_FORMAT_R32G32B32A32_FLOAT, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
+    resource_state->alloc_resource(  "GBufferNormal", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, .texture = { .format =     DXGI_FORMAT_R8G8B8A8_SNORM, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
+    resource_state->alloc_resource(      "GBufferUV", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, .texture = { .format =       DXGI_FORMAT_R32G32_FLOAT, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
+    resource_state->alloc_resource("GBufferMaterial", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, .texture = { .format =           DXGI_FORMAT_R16_UINT, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
+    resource_state->alloc_resource(          "Depth", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, .texture = { .format =          DXGI_FORMAT_D32_FLOAT, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 }, .do_clear = true, .clear_value = { .Format = DXGI_FORMAT_D32_FLOAT, .DepthStencil = { .Depth = 1.0f, .Stencil = 0 } } });
+    resource_state->alloc_resource(          "Color", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, .texture = { .format =     DXGI_FORMAT_R8G8B8A8_UNORM, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
+    resource_state->alloc_resource(        "BlitOut", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, .texture = { .format =     DXGI_FORMAT_R8G8B8A8_UNORM, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
+    
+    resource_state->alloc_pass_resource("GBufferPosition", device, srv_heap, nullptr, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource(  "GBufferNormal", device, srv_heap, nullptr, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource(      "GBufferUV", device, srv_heap, nullptr, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource("GBufferMaterial", device, srv_heap, nullptr, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource(          "Depth", device,  nullptr, nullptr,  nullptr, dsv_heap);
+    resource_state->alloc_pass_resource(          "Color", device, srv_heap, nullptr, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource(        "BlitOut", device, srv_heap, nullptr, rtv_heap,  nullptr);
 
 
     auto* gbuffer_pass = new GBuffer_Pass;
@@ -885,11 +910,11 @@ int main()
         gbuffer_pass->scissor_height  = tex_height;
         gbuffer_pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
-        gbuffer_pass->outputs.push_back(gbuffer_position_resource);
-        gbuffer_pass->outputs.push_back(gbuffer_normal_resource);
-        gbuffer_pass->outputs.push_back(gbuffer_uv_resource);
-        gbuffer_pass->outputs.push_back(gbuffer_material_resource);
-        gbuffer_pass->depth_target = gbuffer_depth;
+        gbuffer_pass->outputs.push_back("GBufferPosition");
+        gbuffer_pass->outputs.push_back("GBufferNormal");
+        gbuffer_pass->outputs.push_back("GBufferUV");
+        gbuffer_pass->outputs.push_back("GBufferMaterial");
+        gbuffer_pass->depth_target = "Depth";
     }
 
     auto* defer_pass = new Defer_Pass;
@@ -901,11 +926,11 @@ int main()
         defer_pass->scissor_height  = tex_height;
         defer_pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
-        defer_pass->inputs.push_back(gbuffer_position_resource);
-        defer_pass->inputs.push_back(gbuffer_normal_resource);
-        defer_pass->inputs.push_back(gbuffer_uv_resource);
-        defer_pass->inputs.push_back(gbuffer_material_resource);
-        defer_pass->outputs.push_back(defer_resource);
+        defer_pass->inputs.push_back("GBufferPosition");
+        defer_pass->inputs.push_back("GBufferNormal");
+        defer_pass->inputs.push_back("GBufferUV");
+        defer_pass->inputs.push_back("GBufferMaterial");
+        defer_pass->outputs.push_back("Color");
     }
 
     auto* blit_pass = new Blit_Pass;
@@ -917,8 +942,8 @@ int main()
         blit_pass->scissor_height  = tex_height;
         blit_pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
-        blit_pass->inputs.push_back(defer_resource);
-        blit_pass->outputs.push_back(blit_output_resource);
+        blit_pass->inputs.push_back("Color");
+        blit_pass->outputs.push_back("BlitOut");
     }
     // @Todo:
     // I'm implicitly connecting blit_output_resource to swap chain's current 
@@ -975,8 +1000,8 @@ int main()
 
 
     // @Temporary:
-    DX12_Descriptor tmp_uav = dx12_alloc_descriptor(srv_heap);
-    dx12_create_uav(device, defer_resource->resource, &tmp_uav, defer_resource->resource->desc.texture.format);
+    //DX12_Descriptor tmp_uav = dx12_alloc_descriptor(srv_heap);
+    //dx12_create_uav(device, defer_resource->resource, &tmp_uav, defer_resource->resource->desc.texture.format);
 
 
 
@@ -1034,60 +1059,62 @@ int main()
 
 
             {
-                GBuffer_Pass::Draw_Data param = {
-                    .world                  = scene,
-                    .resource_state         = resource_state,
-                    .transforms_id          = transforms_srv.index,
-                    .camera_id              = camera_srv.index,
-                    .anisotropic_sampler_id = anisotropic_sampler_descriptor.index
-                };
-                gbuffer_pass->begin(cmd_list);
-                cmd_list->clear_dsv(&gbuffer_pass->depth_target->dsv, 1.0f, 0, 0, tex_width, tex_height); // @Todo: Fragile
-                gbuffer_pass->draw(cmd_list, &param);
+                gbuffer_pass->begin(resource_state, cmd_list);
+                gbuffer_pass->execute(resource_state, cmd_list, scene, transforms_srv.index, camera_srv.index, anisotropic_sampler_descriptor.index);
             }
 
             {
                 Defer_Pass::Draw_Data param = {
-                    .camera_id              = camera_srv.index,
-                    .linear_sampler_id      = linear_sampler_descriptor.index,
-                    .anisotropic_sampler_id = anisotropic_sampler_descriptor.index,
+                    .camera_id      = camera_srv.index,
+                    .linear_id      = linear_sampler_descriptor.index,
+                    .anisotropic_id = anisotropic_sampler_descriptor.index,
                 };
-                defer_pass->begin(cmd_list);
-                defer_pass->draw(cmd_list, &param);
+                defer_pass->begin(resource_state, cmd_list);
+                defer_pass->execute(resource_state, cmd_list, param);
             }
 
             // @Temporary:
-            if (0) {
+#if 0
                 cmd_list->native_cmd_list->SetComputeRootSignature(bindless_root_signature);
-                cmd_list->set_pipeline_state(shader_table["Test"]);
+                cmd_list->set_pipeline_state(shader_table["BloomDownsample"]);
+
+                struct Push {
+                    u32 input;
+                    u32 output;
+                    u32 bilinear_clamp;
+                } push = {
+                    .input          = tmp_uav.index,
+                    .output         = tmp_uav.index,
+                    .bilinear_clamp = bilinear_clamp.index
+                };
 
                 cmd_list->transition_barrier(defer_resource->resource, 0, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-                u32 tex_id = tmp_uav.index;
-                cmd_list->set_graphics_root_constants(0, sizeof(u32) >> 2, &tex_id);
-                cmd_list->set_compute_root_constants(0, 1, &tex_id);
+                cmd_list->set_graphics_root_constants(0, sizeof(Push) >> 2, &push);
+                cmd_list->set_compute_root_constants(0, 1, &push);
 
                 u32 w = defer_resource->resource->desc.texture.width;
                 u32 h = defer_resource->resource->desc.texture.height;
                 cmd_list->dispatch((w + 7) / 8, (h + 7) / 8, 1);
-            }
+#endif
 
             cmd_list->set_graphics_root_signature(bindless_root_signature);
             {
                 Blit_Pass::Draw_Data param = {
-                    .linear_sampler_id = linear_sampler_descriptor.index
+                    .linear_id = linear_sampler_descriptor.index
                 };
-                blit_pass->begin(cmd_list);
-                blit_pass->draw(cmd_list, &param);
+                blit_pass->begin(resource_state, cmd_list);
+                blit_pass->execute(resource_state, cmd_list, param);
             }
 
-            
+
             ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd_list->native_cmd_list);
 
 
 
-            cmd_list->transition_barrier(blit_output_resource->resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            auto* final_resource = resource_state->get_resource("BlitOut");
+            cmd_list->transition_barrier(final_resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE);
             cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_COPY_DEST);
-            cmd_list->native_cmd_list->CopyResource(swap_chain->get_current_resource()->native_resource, blit_output_resource->resource->native_resource);
+            cmd_list->native_cmd_list->CopyResource(swap_chain->get_current_resource()->native_resource, final_resource->native_resource);
             cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_COPY_SOURCE);
         }
         cmd_list->transition_barrier(swap_chain->get_current_resource(), 0, D3D12_RESOURCE_STATE_PRESENT);

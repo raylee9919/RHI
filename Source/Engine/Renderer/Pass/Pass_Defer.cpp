@@ -7,18 +7,18 @@
 
 namespace Engine
 {
-    void Defer_Pass::draw(DX12_Command_List* cmd_list, void* param)
+    void Defer_Pass::execute(Resource_State* resource_state, DX12_Command_List* cmd_list, Draw_Data data)
     {
-        auto* data = (Draw_Data*)param;
         Push_Constants push = {
-            // @Todo: Fragile af
-            .position_id            = inputs[0]->get_srv_index(),
-            .normal_id              = inputs[1]->get_srv_index(),
-            .uv_id                  = inputs[2]->get_srv_index(),
-            .material_id            = inputs[3]->get_srv_index(),
-            .camera_id              = data->camera_id,
-            .linear_sampler_id      = data->linear_sampler_id,
-            .anisotropic_sampler_id = data->anisotropic_sampler_id
+            // @Robustness
+            .position_id            = resource_state->get_pass_resource(inputs[0]).get_srv_index(),
+            .normal_id              = resource_state->get_pass_resource(inputs[1]).get_srv_index(),
+            .uv_id                  = resource_state->get_pass_resource(inputs[2]).get_srv_index(),
+            .material_id            = resource_state->get_pass_resource(inputs[3]).get_srv_index(),
+
+            .camera_id              = data.camera_id,
+            .linear_sampler_id      = data.linear_id,
+            .anisotropic_sampler_id = data.anisotropic_id
         };
 
         cmd_list->set_graphics_root_constants(0u, sizeof(push) >> 2, &push);
