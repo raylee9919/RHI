@@ -30,9 +30,13 @@ float4 ps_main(PS_Input input) : SV_TARGET
     SamplerState linear_sampler = SamplerDescriptorHeap[push.linear_sampler_id];
 
     // g-buffer.
-    Texture2D <float4> color_texture = ResourceDescriptorHeap[push.color_id];
-    float4 color = color_texture.Sample(linear_sampler, input.screen_uv);
+    Texture2D <float3> color_texture = ResourceDescriptorHeap[push.color_id];
+    float3 color = color_texture.Sample(linear_sampler, input.screen_uv);
 
-    float4 result = color;
+    // @Todo: Better tone mapping. Currently, it's Reinhard.
+    // Reinhard-Jodie? ACES Filmic? Khronos PBR Neutral? idk.
+    color = ( color / (color + 1.0) );
+
+    float4 result = float4(color, 1.0);
     return result;
 }

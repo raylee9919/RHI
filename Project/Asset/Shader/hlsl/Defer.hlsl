@@ -159,7 +159,7 @@ float4 ps_main(PS_Input input) : SV_TARGET
     // @Temporary: Debug light scene
     Point_Light lights[2];
     lights[0].position = float3(-2.0, 3.0, 0.0);
-    lights[0].radiance = 12.0;
+    lights[0].radiance = 1200.0;
     lights[1].position = float3( 5.0, 1.0, 0.0);
     lights[1].radiance = float3(4.0, 2.0, 12.0);
 

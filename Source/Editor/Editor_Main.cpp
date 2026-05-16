@@ -579,6 +579,8 @@ Shader_Asset shader_asset_from_file(const String& file_path) {
                 format = DXGI_FORMAT_R32_UINT;
             } else if (str == "R16_UINT") {
                 format = DXGI_FORMAT_R16_UINT;
+            } else if (str == "R11G11B10_FLOAT") {
+                format = DXGI_FORMAT_R11G11B10_FLOAT;
             } else {
                 CORE_ASSERT(0);
             }
@@ -644,7 +646,7 @@ void deinit_pipeline_state(DX12_Pipeline_State* pso) {
     }
 }
 
-#if 1
+#if 0
 #  define WIDTH  2560
 #  define HEIGHT 1440
 #else
@@ -890,16 +892,16 @@ int main()
     resource_state->alloc_resource(      "GBufferUV", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, .texture = { .format =       DXGI_FORMAT_R32G32_FLOAT, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
     resource_state->alloc_resource("GBufferMaterial", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, .texture = { .format =           DXGI_FORMAT_R16_UINT, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
     resource_state->alloc_resource(          "Depth", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, .texture = { .format =          DXGI_FORMAT_D32_FLOAT, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 }, .do_clear = true, .clear_value = { .Format = DXGI_FORMAT_D32_FLOAT, .DepthStencil = { .Depth = 1.0f, .Stencil = 0 } } });
-    resource_state->alloc_resource(          "Color", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, .texture = { .format =     DXGI_FORMAT_R8G8B8A8_UNORM, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
+    resource_state->alloc_resource(          "Color", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET|D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, .texture = { .format =     DXGI_FORMAT_R11G11B10_FLOAT, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
     resource_state->alloc_resource(        "BlitOut", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, .texture = { .format =     DXGI_FORMAT_R8G8B8A8_UNORM, .width = tex_width, .height = tex_height, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
     
-    resource_state->alloc_pass_resource("GBufferPosition", device, srv_heap, nullptr, rtv_heap,  nullptr);
-    resource_state->alloc_pass_resource(  "GBufferNormal", device, srv_heap, nullptr, rtv_heap,  nullptr);
-    resource_state->alloc_pass_resource(      "GBufferUV", device, srv_heap, nullptr, rtv_heap,  nullptr);
-    resource_state->alloc_pass_resource("GBufferMaterial", device, srv_heap, nullptr, rtv_heap,  nullptr);
-    resource_state->alloc_pass_resource(          "Depth", device,  nullptr, nullptr,  nullptr, dsv_heap);
-    resource_state->alloc_pass_resource(          "Color", device, srv_heap, nullptr, rtv_heap,  nullptr);
-    resource_state->alloc_pass_resource(        "BlitOut", device, srv_heap, nullptr, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource("GBufferPosition", device, srv_heap,  nullptr, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource(  "GBufferNormal", device, srv_heap,  nullptr, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource(      "GBufferUV", device, srv_heap,  nullptr, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource("GBufferMaterial", device, srv_heap,  nullptr, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource(          "Depth", device,  nullptr,  nullptr,  nullptr, dsv_heap);
+    resource_state->alloc_pass_resource(          "Color", device, srv_heap, srv_heap, rtv_heap,  nullptr);
+    resource_state->alloc_pass_resource(        "BlitOut", device, srv_heap,  nullptr, rtv_heap,  nullptr);
 
 
 
@@ -1005,13 +1007,13 @@ int main()
 
 
     // @Temporary:
-    resource_state->alloc_resource("Color2", device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, .texture = { .format = DXGI_FORMAT_R8G8B8A8_UNORM, .width = tex_width>>1, .height = tex_height>>1, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
-    auto* bloom_in_resource  = resource_state->get_resource("Color");
-    auto* bloom_out_resource = resource_state->get_resource("Color2");
-    DX12_Descriptor bloom_in_srv  = dx12_alloc_descriptor(srv_heap);
-    DX12_Descriptor bloom_out_uav = dx12_alloc_descriptor(srv_heap);
-    dx12_create_srv(device,  bloom_in_resource,  &bloom_in_srv,  bloom_in_resource->desc.texture.format);
-    dx12_create_uav(device, bloom_out_resource, &bloom_out_uav, bloom_out_resource->desc.texture.format);
+    //
+    u32 num_bloom_downsample = 5;
+    for (u32 i = 1; i <= num_bloom_downsample; ++i) {
+        const String name = "BloomDownsample" + std::to_string(i);
+        resource_state->alloc_resource(name, device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, .texture = { .format = DXGI_FORMAT_R11G11B10_FLOAT, .width = max(tex_width>>i, 0), .height = max(tex_height>>i, 0), .mip_levels = 1, .depth = 1, .num_samples = 1 } });
+        resource_state->alloc_pass_resource(name, device, srv_heap, srv_heap, nullptr,  nullptr);
+    }
 
 
 
@@ -1086,30 +1088,40 @@ int main()
             // @Temporary:
 #if 1
             {
-                cmd_list->set_compute_root_signature(bindless_root_signature);
-                cmd_list->set_pipeline_state(shader_table["BloomDownsample"]);
-
                 struct Push {
                     u32 input_srv;
                     u32 output_uav;
                     u32 bilinear_clamp;
-                } push = {
-                    .input_srv      = bloom_in_srv.index,
-                    .output_uav     = bloom_out_uav.index,
-                    .bilinear_clamp = bilinear_clamp.index
                 };
-                cmd_list->set_compute_root_constants(0, sizeof(push) >> 2, &push);
+                auto bloom_downsample = [&](const String& in_name, const String& out_name) {
+                    const auto& in  = resource_state->get_pass_resource(in_name);
+                    const auto& out = resource_state->get_pass_resource(out_name);
+                    Push push = {
+                        .input_srv      = in.srv.index,
+                        .output_uav     = out.uav.index,
+                        .bilinear_clamp = bilinear_clamp.index
+                    };
+                    cmd_list->set_compute_root_constants(0, sizeof(push) >> 2, &push);
 
-                cmd_list->transition_barrier(bloom_in_resource,  0, D3D12_RESOURCE_STATE_COMMON);
-                cmd_list->transition_barrier(bloom_out_resource, 0, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                    auto* in_res  = resource_state->get_resource(in_name);
+                    auto* out_res = resource_state->get_resource(out_name);
 
-                u32 w = bloom_out_resource->desc.texture.width;
-                u32 h = bloom_out_resource->desc.texture.height;
-                cmd_list->dispatch((w + 7) / 8, (h + 7) / 8, 1);
+                    cmd_list->transition_barrier(in_res,  0, D3D12_RESOURCE_STATE_COMMON);
+                    cmd_list->transition_barrier(out_res, 0, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-                cmd_list->transition_barrier(bloom_out_resource, 0, D3D12_RESOURCE_STATE_COPY_SOURCE);
-                cmd_list->transition_barrier(bloom_in_resource, 0, D3D12_RESOURCE_STATE_COPY_DEST);
-                cmd_list->native_cmd_list->CopyResource(bloom_in_resource->native_resource, bloom_out_resource->native_resource);
+                    u32 w = out_res->desc.texture.width;
+                    u32 h = out_res->desc.texture.height;
+                    cmd_list->dispatch((w + 7) / 8, (h + 7) / 8, 1);
+                };
+
+                cmd_list->set_pipeline_state(shader_table["BloomDownsample"]);
+                cmd_list->set_compute_root_signature(shader_table["BloomDownsample"]->compute.root_signature);
+
+                bloom_downsample(           "Color", "BloomDownsample1");
+                bloom_downsample("BloomDownsample1", "BloomDownsample2");
+                bloom_downsample("BloomDownsample2", "BloomDownsample3");
+                bloom_downsample("BloomDownsample3", "BloomDownsample4");
+                bloom_downsample("BloomDownsample4", "BloomDownsample5");
             }
 #endif
 
