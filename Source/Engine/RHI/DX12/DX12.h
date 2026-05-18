@@ -76,6 +76,7 @@ namespace Engine
         ID3D12RootSignature*          root_signature;
         void*                         bytecode;
         u64                           length;
+        u32                           thread_group_size[3];
     };
 
     enum DX12_Pipeline_Type {

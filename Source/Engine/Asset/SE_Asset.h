@@ -35,13 +35,13 @@ namespace Engine
     };
 
     struct Material {
-        String name;
+        String                  name;
 
-        u32 id;
-        DX12_Resource*  resource;
-        DX12_Descriptor srv;
+        u32                     id;
+        DX12_Resource*          resource;
+        DX12_Descriptor         srv;
 
-        Shader_Material shader_material;
+        Shader_Material         shader_material;
         Array <DX12_Resource*>  resources;
         Array <DX12_Descriptor> srvs;
     };

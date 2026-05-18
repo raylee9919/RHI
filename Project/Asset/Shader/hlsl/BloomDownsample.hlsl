@@ -7,67 +7,79 @@ struct Push_Constants {
     uint output_id;
     uint bilinear_clamp_id;
 };
+
 PUSH_CONSTANTS(Push_Constants, push);
+
+float luminance(float3 c)
+{
+    return dot(c, float3(0.2126, 0.7152, 0.0722));
+}
+
+float karis_weight(float3 c)
+{
+    return 1.0 / (1.0 + luminance(c));
+}
+
+float3 karis_average(float3 a, float3 b, float3 c, float3 d)
+{
+    float wa = karis_weight(a);
+    float wb = karis_weight(b);
+    float wc = karis_weight(c);
+    float wd = karis_weight(d);
+    return (a*wa + b*wb + c*wc + d*wd) / (wa + wb + wc + wd);
+}
 
 [numthreads(8, 8, 1)]
 void cs_main(uint3 dtid : SV_DispatchThreadID)
 {
-    Texture2D <float4> input  = ResourceDescriptorHeap[push.input_id];
-    RWTexture2D <float4> output = ResourceDescriptorHeap[push.output_id];
-    SamplerState bilinear_clamp = SamplerDescriptorHeap[push.bilinear_clamp_id];
+    Texture2D    <float3> input         = ResourceDescriptorHeap[push.input_id];
+    RWTexture2D  <float3> output        = ResourceDescriptorHeap[push.output_id];
+    SamplerState          bilinear_clamp = SamplerDescriptorHeap[push.bilinear_clamp_id];
 
     uint2 out_dims;
     output.GetDimensions(out_dims.x, out_dims.y);
-
     if (any(dtid.xy >= out_dims))
         return;
 
     uint2 in_dims;
     input.GetDimensions(in_dims.x, in_dims.y);
 
-    // Texel size of the input
     float2 texel = 1.0 / float2(in_dims);
+    float2 uv    = (float2(dtid.xy) + 0.5) * texel * 2.0;
 
-    // UV of the center of the output pixel, mapped into input space
-    // Output is half-res of input, so each output pixel covers a 2x2 input block
-    float2 uv = (float2(dtid.xy) + 0.5) * texel * 2.0;
-
-    // 13-tap filter from "Next Generation Post Processing in Call of Duty: Advanced Warfare"
-    // (Jorge Jimenez, SIGGRAPH 2014)
+    // 13-tap filter (Jimenez, SIGGRAPH 2014)
     //
     //  [a] . [b] . [c]
     //  . [e] . [f] .
     //  [g] . [h] . [i]
     //  . [j] . [k] .
     //  [l] . [m] . [n]
-    //
-    // 4 bilinear samples at half-offset corners (e,f,j,k) each cover a 2x2 block → weight 0.5 total
-    // 4 bilinear samples at full-offset corners (a,c,l,n)                          → weight 0.125 total
-    // 4 edge bilinear samples (b,g,i,m)                                            → weight 0.25 total (shared)
-    // 1 center sample (h)                                                           → weight 0.125
 
-    float4 a = input.SampleLevel(bilinear_clamp, uv + float2(-2, -2) * texel, 0);
-    float4 b = input.SampleLevel(bilinear_clamp, uv + float2( 0, -2) * texel, 0);
-    float4 c = input.SampleLevel(bilinear_clamp, uv + float2( 2, -2) * texel, 0);
+    float3 a = input.SampleLevel(bilinear_clamp, uv + float2(-2, -2) * texel, 0);
+    float3 b = input.SampleLevel(bilinear_clamp, uv + float2( 0, -2) * texel, 0);
+    float3 c = input.SampleLevel(bilinear_clamp, uv + float2( 2, -2) * texel, 0);
+    float3 g = input.SampleLevel(bilinear_clamp, uv + float2(-2,  0) * texel, 0);
+    float3 h = input.SampleLevel(bilinear_clamp, uv + float2( 0,  0) * texel, 0);
+    float3 i = input.SampleLevel(bilinear_clamp, uv + float2( 2,  0) * texel, 0);
+    float3 l = input.SampleLevel(bilinear_clamp, uv + float2(-2,  2) * texel, 0);
+    float3 m = input.SampleLevel(bilinear_clamp, uv + float2( 0,  2) * texel, 0);
+    float3 n = input.SampleLevel(bilinear_clamp, uv + float2( 2,  2) * texel, 0);
+    float3 e = input.SampleLevel(bilinear_clamp, uv + float2(-1, -1) * texel, 0);
+    float3 f = input.SampleLevel(bilinear_clamp, uv + float2( 1, -1) * texel, 0);
+    float3 j = input.SampleLevel(bilinear_clamp, uv + float2(-1,  1) * texel, 0);
+    float3 k = input.SampleLevel(bilinear_clamp, uv + float2( 1,  1) * texel, 0);
 
-    float4 g = input.SampleLevel(bilinear_clamp, uv + float2(-2,  0) * texel, 0);
-    float4 h = input.SampleLevel(bilinear_clamp, uv + float2( 0,  0) * texel, 0);
-    float4 i = input.SampleLevel(bilinear_clamp, uv + float2( 2,  0) * texel, 0);
+    // Karis average on each 2x2 group to suppress fireflies
+    // Applied only on first downsample (full-res → half-res)
+    float3 g0 = karis_average(e, f, j, k);          // center quad   weight 0.5
+    float3 g1 = karis_average(a, b, e, f) * 0.5;    // top-left      weight 0.125
+    float3 g2 = karis_average(b, c, f, g) * 0.5;    // top-right     weight 0.125  
+    float3 g3 = karis_average(j, k, m, n) * 0.5;    // bottom-left   weight 0.125
+    float3 g4 = karis_average(g, h, i, j) * 0.5;    // bottom-right  weight 0.125
 
-    float4 l = input.SampleLevel(bilinear_clamp, uv + float2(-2,  2) * texel, 0);
-    float4 m = input.SampleLevel(bilinear_clamp, uv + float2( 0,  2) * texel, 0);
-    float4 n = input.SampleLevel(bilinear_clamp, uv + float2( 2,  2) * texel, 0);
-
-    float4 e = input.SampleLevel(bilinear_clamp, uv + float2(-1, -1) * texel, 0);
-    float4 f = input.SampleLevel(bilinear_clamp, uv + float2( 1, -1) * texel, 0);
-    float4 j = input.SampleLevel(bilinear_clamp, uv + float2(-1,  1) * texel, 0);
-    float4 k = input.SampleLevel(bilinear_clamp, uv + float2( 1,  1) * texel, 0);
-
-    float4 result =
-        0.125     * h                       +  // center
-        0.03125   * (a + c + l + n)         +  // far corners  (0.125 / 4)
-        0.0625    * (b + g + i + m)         +  // edges        (0.25  / 4)
-        0.125     * (e + f + j + k);           // inner quad   (0.5   / 4)
+    // @Note: This pass is only used for the first downsample (Color -> Bloom1).
+    //        Subsequent downsamples should use a version without Karis average.
+    float3 result = g0 * 0.5 + (g1 + g2 + g3 + g4) * 0.125;
 
     output[dtid.xy] = result;
 }

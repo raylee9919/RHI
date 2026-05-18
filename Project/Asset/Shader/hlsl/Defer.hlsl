@@ -100,7 +100,7 @@ PS_Input vs_main(uint vertex_id : SV_VertexID)
     return result;
 }
 
-float4 ps_main(PS_Input input) : SV_TARGET
+float3 ps_main(PS_Input input) : SV_TARGET
 {
     // g-buffer
     Texture2D <float4> gbuffer_position  = ResourceDescriptorHeap[push.position_id];
@@ -149,11 +149,12 @@ float4 ps_main(PS_Input input) : SV_TARGET
     }
 
     // Emmissive
-    float3 emissive = 0.0;
+    float emissive_strength = 3.0f; // @Temporary
+    float3 emissive = 0.0f;
     uint emissive_id = material.emissive_id;
     if (emissive_id != 0xffffffff) {
         Texture2D <float4> emissive_texture = ResourceDescriptorHeap[NonUniformResourceIndex(emissive_id)];
-        emissive = emissive_texture.Sample(anisotropic_sampler, uv).xyz;
+        emissive = emissive_texture.Sample(anisotropic_sampler, uv).xyz * emissive_strength;
     }
 
     // @Temporary: Debug light scene
@@ -173,8 +174,5 @@ float4 ps_main(PS_Input input) : SV_TARGET
     float emissive_intensity = 1.0;
     result += (emissive * emissive_intensity);
 
-    // @Todo: Correct gamma correction
-    result = pow(result, 1.0 / 2.2);
-
-    return float4(result, 1.0);
+    return result;
 }

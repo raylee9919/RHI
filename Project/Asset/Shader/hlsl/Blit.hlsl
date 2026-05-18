@@ -37,6 +37,9 @@ float4 ps_main(PS_Input input) : SV_TARGET
     // Reinhard-Jodie? ACES Filmic? Khronos PBR Neutral? idk.
     color = ( color / (color + 1.0) );
 
+    // @Todo: Correct gamma correction?
+    color = pow(color, 1.0 / 2.2);
+
     float4 result = float4(color, 1.0);
     return result;
 }
