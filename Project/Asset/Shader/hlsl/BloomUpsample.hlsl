@@ -25,27 +25,24 @@ void cs_main(uint3 dtid : SV_DispatchThreadID)
     input.GetDimensions(input_size.x, input_size.y);
 
     float2 uv = (float2(dtid.xy) + 0.5f) / float2(output_size);
-    // @Todo: Parameterize radius
     float2 d = 1.0f / float2(input_size) * push.radius_scale;
-
-    float3 result = 0.0f;
 
     // 3x3 Tent Filter
     static const float w1 = 1.0f / 16.0f;
     static const float w2 = 2.0f / 16.0f;
     static const float w4 = 4.0f / 16.0f;
 
-    result += input.Sample(bilinear_clamp, uv + float2(-d.x, -d.y)) * w1;
-    result += input.Sample(bilinear_clamp, uv + float2(0.0f, -d.y)) * w2;
-    result += input.Sample(bilinear_clamp, uv + float2( d.x, -d.y)) * w1;
+    float3 s1 = input.Sample(bilinear_clamp, uv + float2(-d.x, -d.y));
+    float3 s2 = input.Sample(bilinear_clamp, uv + float2(0.0f, -d.y));
+    float3 s3 = input.Sample(bilinear_clamp, uv + float2( d.x, -d.y));
+    float3 s4 = input.Sample(bilinear_clamp, uv + float2(-d.x, 0.0f));
+    float3 s5 = input.Sample(bilinear_clamp, uv + float2(0.0f, 0.0f));
+    float3 s6 = input.Sample(bilinear_clamp, uv + float2( d.x, 0.0f));
+    float3 s7 = input.Sample(bilinear_clamp, uv + float2(-d.x,  d.y));
+    float3 s8 = input.Sample(bilinear_clamp, uv + float2(0.0f,  d.y));
+    float3 s9 = input.Sample(bilinear_clamp, uv + float2( d.x,  d.y));
 
-    result += input.Sample(bilinear_clamp, uv + float2(-d.x, 0.0f)) * w2;
-    result += input.Sample(bilinear_clamp, uv + float2(0.0f, 0.0f)) * w4;
-    result += input.Sample(bilinear_clamp, uv + float2( d.x, 0.0f)) * w2;
-
-    result += input.Sample(bilinear_clamp, uv + float2(-d.x,  d.y)) * w1;
-    result += input.Sample(bilinear_clamp, uv + float2(0.0f,  d.y)) * w2;
-    result += input.Sample(bilinear_clamp, uv + float2( d.x,  d.y)) * w1;
+    float3 result = (s1 + s3 + s7 + s9)*0.0625f + (s2 + s4 + s6 + s8)*0.125f + s5*0.25f;
 
     output[dtid.xy] += result;
 }

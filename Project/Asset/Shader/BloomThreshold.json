@@ -1,0 +1,5 @@
+{
+    "pipeline" : "Compute",
+    "name": "BloomThreshold",
+    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader\\HLSL\\BloomThreshold.hlsl"
+}

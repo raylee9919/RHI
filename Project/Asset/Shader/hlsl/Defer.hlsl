@@ -149,12 +149,13 @@ float3 ps_main(PS_Input input) : SV_TARGET
     }
 
     // Emmissive
-    float emissive_strength = 3.0f; // @Temporary
+    float emissive_strength = 4.0f; // @Temporary
     float3 emissive = 0.0f;
     uint emissive_id = material.emissive_id;
     if (emissive_id != 0xffffffff) {
         Texture2D <float4> emissive_texture = ResourceDescriptorHeap[NonUniformResourceIndex(emissive_id)];
-        emissive = emissive_texture.Sample(anisotropic_sampler, uv).xyz * emissive_strength;
+        emissive = emissive_texture.Sample(anisotropic_sampler, uv).rgb;
+        emissive = pow(emissive, 2.2) * emissive_strength;
     }
 
     // @Temporary: Debug light scene

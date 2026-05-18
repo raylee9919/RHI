@@ -1031,16 +1031,17 @@ int main()
 
     // @Temporary: Bloom
     //
-    u32 num_bloom_mips = 5;
-    for (u32 i = 0; i < num_bloom_mips; ++i) {
+    f32 bloom_threshold    = 1.0f;
+    f32 bloom_radius_scale = 2.0f;
+    f32 bloom_strength     = 0.02f;
+    u32 bloom_num_mips     = 5;
+    for (u32 i = 0; i < bloom_num_mips; ++i) {
         const String name = "Bloom" + std::to_string(i);
-        u32 w = max(tex_width >> (i+1), 1u);
-        u32 h = max(tex_height >> (i+1), 1u);
+        u32 w = max(tex_width >> i, 1u);
+        u32 h = max(tex_height >> i, 1u);
         resource_state->alloc_resource(name, device, { .type = DX12_RESOURCE_TYPE_TEXTURE_2D, .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, .texture = { .format = DXGI_FORMAT_R11G11B10_FLOAT, .width = w, .height = h, .mip_levels = 1, .depth = 1, .num_samples = 1 } });
         resource_state->alloc_pass_resource(name, device, srv_heap, srv_heap, nullptr,  nullptr);
     }
-    f32 radius_scale   = 1.0f;
-    f32 bloom_strength = 0.1f;
 
 
 
@@ -1065,7 +1066,8 @@ int main()
         {
             ImGui::Begin("Panel");
             ImGui::Text("%.3f mspf (%.1f fps)", 1000.0f / io.Framerate, io.Framerate);
-            ImGui::SliderFloat("Bloom Radius Scale", &radius_scale, 1.0f, 30.0f);
+            ImGui::SliderFloat("Bloom Threshold", &bloom_threshold, 0.0f, 32.0f);
+            ImGui::SliderFloat("Bloom Radius Scale", &bloom_radius_scale, 1.0f, 32.0f);
             ImGui::SliderFloat("Bloom Strength", &bloom_strength, 0.0f, 1.0f);
             ImGui::End();
 
@@ -1117,6 +1119,48 @@ int main()
             // @Temporary:
             //
             {
+                auto* shader = shader_table["BloomThreshold"];
+                cmd_list->set_pipeline_state(shader);
+                cmd_list->set_compute_root_signature(shader->compute.root_signature);
+
+                struct Push {
+                    u32 input_srv;
+                    u32 output_uav;
+                    u32 bilinear_clamp;
+                    f32 threshold;
+                };
+
+                const String in_name  = "Color";
+                const String out_name = "Bloom0";
+                const auto& in  = resource_state->get_pass_resource(in_name);
+                const auto& out = resource_state->get_pass_resource(out_name);
+                Push push = {
+                    .input_srv      = in.srv.index,
+                    .output_uav     = out.uav.index,
+                    .bilinear_clamp = bilinear_clamp.index,
+                    .threshold      = bloom_threshold
+                };
+                cmd_list->set_compute_root_constants(0, sizeof(push) >> 2, &push);
+
+                auto* in_res  = resource_state->get_resource(in_name);
+                auto* out_res = resource_state->get_resource(out_name);
+
+                cmd_list->transition_barrier(in_res,  0, D3D12_RESOURCE_STATE_COMMON);
+                cmd_list->transition_barrier(out_res, 0, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+                u32 w = out_res->desc.texture.width;
+                u32 h = out_res->desc.texture.height;
+                cmd_list->dispatch((w + 7) / 8, (h + 7) / 8, 1);
+
+                // Barrier
+                D3D12_RESOURCE_BARRIER uav_barrier = {
+                    .Type  = D3D12_RESOURCE_BARRIER_TYPE_UAV,
+                    .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                    .UAV   = { .pResource = out_res->native_resource }
+                };
+                cmd_list->native_cmd_list->ResourceBarrier(1, &uav_barrier);
+            }
+            {
                 auto* shader = shader_table["BloomDownsample"];
                 cmd_list->set_pipeline_state(shader);
                 cmd_list->set_compute_root_signature(shader->compute.root_signature);
@@ -1135,7 +1179,7 @@ int main()
                         .input_srv      = in.srv.index,
                         .output_uav     = out.uav.index,
                         .bilinear_clamp = bilinear_clamp.index,
-                        .radius_scale   = radius_scale
+                        .radius_scale   = bloom_radius_scale
                     };
                     cmd_list->set_compute_root_constants(0, sizeof(push) >> 2, &push);
 
@@ -1158,8 +1202,7 @@ int main()
                     cmd_list->native_cmd_list->ResourceBarrier(1, &uav_barrier);
                 };
 
-                bloom_downsample("Color", "Bloom0");
-                for (u32 i = 0; i < num_bloom_mips - 1; ++i) {
+                for (u32 i = 0; i < bloom_num_mips - 1; ++i) {
                     bloom_downsample("Bloom" + std::to_string(i), "Bloom" + std::to_string(i + 1));
                 }
             }
@@ -1204,7 +1247,7 @@ int main()
                     cmd_list->native_cmd_list->ResourceBarrier(1, &uav_barrier);
                 };
 
-                for (u32 i = num_bloom_mips - 1; i >= 1; --i) {
+                for (u32 i = bloom_num_mips - 1; i >= 1; --i) {
                     bloom_upsample("Bloom" + std::to_string(i), "Bloom" + std::to_string(i - 1));
                 }
             }

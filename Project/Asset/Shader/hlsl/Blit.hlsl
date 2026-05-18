@@ -13,6 +13,20 @@ struct Push_Constants {
 };
 PUSH_CONSTANTS(Push_Constants, push);
 
+float3 tonemap_aces(float3 x) {
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+
+    return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
+}
+
+float3 tonemap_reinhard(float3 x) {
+    return x / (x + 1.0f);
+}
+
 PS_Input vs_main(uint vertex_id : SV_VertexID)
 {
     PS_Input result;
@@ -33,9 +47,9 @@ float4 ps_main(PS_Input input) : SV_TARGET
     Texture2D <float3> color_texture = ResourceDescriptorHeap[push.color_id];
     float3 color = color_texture.Sample(linear_sampler, input.screen_uv);
 
-    // @Todo: Better tone mapping. Currently, it's Reinhard.
-    // Reinhard-Jodie? ACES Filmic? Khronos PBR Neutral? idk.
-    color = ( color / (color + 1.0) );
+    // Tone mapping.
+    color = tonemap_reinhard(color);
+
 
     // @Todo: Correct gamma correction?
     color = pow(color, 1.0 / 2.2);
