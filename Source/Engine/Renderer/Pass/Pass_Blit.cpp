@@ -1,8 +1,5 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-//
-// Think of it as an implementation on the user/game side.
-//
 #include "Pass_Blit.h"
 
 namespace Engine

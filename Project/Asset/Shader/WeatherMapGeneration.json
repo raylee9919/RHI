@@ -1,0 +1,5 @@
+{
+    "pipeline" : "Compute",
+    "name": "WeatherMapGeneration",
+    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader\\HLSL\\WeatherMapGeneration.hlsl"
+}

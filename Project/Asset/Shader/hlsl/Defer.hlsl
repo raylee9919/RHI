@@ -21,10 +21,12 @@ struct Material {
 };
 
 struct Camera {
+    float4   position;
     float4x4 view;
     float4x4 proj;
     float4x4 view_proj;
-    float4   position;
+    float4x4 inv_view;
+    float4x4 inv_proj;
 };
 
 struct Push_Constants {

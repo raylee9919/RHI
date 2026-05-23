@@ -162,4 +162,6 @@ namespace Engine
     ENGINE_API vec3 euler_from_quaternion(Quaternion q);
     ENGINE_API vec3 to_degree(const vec3& radian);
     ENGINE_API vec3 to_radian(const vec3& degree);
+
+    ENGINE_API m4x4 inverse(const m4x4& m);
 }

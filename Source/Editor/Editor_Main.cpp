@@ -15,6 +15,7 @@
 
 #include "Renderer/Pass/Pass_GBuffer.h"
 #include "Renderer/Pass/Pass_Defer.h"
+#include "Renderer/Pass/Pass_Cloud.h"
 #include "Renderer/Pass/Pass_Blit.h"
 #include "Renderer/Pass/Pass_Composition.h"
 
@@ -32,10 +33,12 @@ struct GPU_Arena {
 
 // Sync with shader!
 struct Shader_Camera {
+    vec4 position;
     m4x4 view;
     m4x4 proj;
     m4x4 view_proj;
-    vec4 position;
+    m4x4 inv_view;
+    m4x4 inv_proj;
 };
 
 struct Camera {
@@ -102,10 +105,12 @@ struct Camera {
 
 Shader_Camera get_shader_camera(Camera* camera) {
     Shader_Camera result = {
+        .position  = vec4(camera->position, 1.0f),
         .view      = camera->view,
         .proj      = camera->proj,
         .view_proj = camera->view_proj,
-        .position  = vec4(camera->position, 1.0f),
+        .inv_view  = inverse(camera->view),
+        .inv_proj  = inverse(camera->proj),
     };
     return result;
 }
@@ -510,15 +515,19 @@ void init_compute_pipeline(DX12_Device* device, Shader_Compiler* compiler,
 
     // pso creation
     DX12_Compute_Pipeline_Desc pso_desc = {
-        .root_signature = root_signature,
-        .bytecode       = compiled_cs.bytecode,
-        .length         = compiled_cs.length
+        .root_signature    = root_signature,
+        .bytecode          = compiled_cs.bytecode,
+        .length            = compiled_cs.length,
+        .thread_group_size = {}
     };
 
     *out_pso = dx12_create_compute_pipeline_state(device, pso_desc);
 
     // Get thread group size.
     cs_reflection.reflection->GetThreadGroupSize(&pso_desc.thread_group_size[0], &pso_desc.thread_group_size[1], &pso_desc.thread_group_size[2]);
+
+    // Set
+    out_pso->compute = pso_desc;
 
     // Cleanup
     cs_reflection.release();
@@ -742,7 +751,7 @@ int main()
 
 
     // Import GLTF manually.
-    if (1) {
+    if (0) {
         String path = (asset_dir / "Model/Sponza/Sponza.gltf").string();
 
         auto loaded = load_gltf(scene, asset_state, path, false);
@@ -764,7 +773,7 @@ int main()
         }
     }
 
-    if (1) {
+    if (0) {
         String path = (asset_dir / "Model/DamagedHelmet/DamagedHelmet.gltf").string();
 
         auto loaded = load_gltf(scene, asset_state, path, true);
@@ -809,19 +818,19 @@ int main()
 
     // @Temporary: Create linear sampler.
     //
-    auto linear_sampler_descriptor = dx12_alloc_descriptor(sampler_heap);
+    auto linear_wrap = dx12_alloc_descriptor(sampler_heap);
     {
         D3D12_SAMPLER_DESC desc = {
             .Filter         = D3D12_FILTER_MIN_MAG_MIP_LINEAR,
-            .AddressU       = D3D12_TEXTURE_ADDRESS_MODE_MIRROR, 
-            .AddressV       = D3D12_TEXTURE_ADDRESS_MODE_MIRROR, 
-            .AddressW       = D3D12_TEXTURE_ADDRESS_MODE_MIRROR, 
+            .AddressU       = D3D12_TEXTURE_ADDRESS_MODE_WRAP, 
+            .AddressV       = D3D12_TEXTURE_ADDRESS_MODE_WRAP, 
+            .AddressW       = D3D12_TEXTURE_ADDRESS_MODE_WRAP, 
             .MipLODBias     = 0.f,
             .ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER,
             .MinLOD         = 0.f,
             .MaxLOD         = 1e10f
         };
-        device->native_device->CreateSampler(&desc, linear_sampler_descriptor.cpu_handle);
+        device->native_device->CreateSampler(&desc, linear_wrap.cpu_handle);
     }
 
     auto bilinear_clamp = dx12_alloc_descriptor(sampler_heap);
@@ -890,6 +899,105 @@ int main()
     auto transforms_srv = dx12_alloc_descriptor(srv_heap);
     dx12_create_srv(device, transforms_resource, &transforms_srv, DXGI_FORMAT_UNKNOWN, max_transforms, stride);
 
+    // @Temporary
+    // @Temporary
+    DX12_Resource* noise = nullptr;
+    auto noise_uav = dx12_alloc_descriptor(srv_heap);
+    auto noise_srv = dx12_alloc_descriptor(srv_heap);
+    {
+        DX12_Resource_Desc desc = {
+            .type = DX12_RESOURCE_TYPE_TEXTURE_3D,
+            .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+            .texture = {
+                .format      = DXGI_FORMAT_R8G8B8A8_UNORM,
+                .width       = 128,
+                .height      = 128,
+                .mip_levels  = 1,
+                .depth       = 128,
+                .num_samples = 1,
+            }
+        };
+        noise = dx12_alloc_resource(device, desc);
+        noise->native_resource->SetName(L"CloudNoiseTexture");
+        dx12_create_uav(device, noise, &noise_uav, noise->desc.texture.format);
+        dx12_create_srv(device, noise, &noise_srv, noise->desc.texture.format);
+
+        auto* shader = shader_table.at("CloudNoise");
+        cmd_list->begin();
+        {
+            cmd_list->set_resource_and_sampler_heap(srv_heap, sampler_heap);
+            cmd_list->set_pipeline_state(shader);
+            cmd_list->set_compute_root_signature(shader->compute.root_signature);
+
+            u32 texture_id = noise_uav.index;
+            cmd_list->set_compute_root_constants(0, 1, &texture_id);
+
+            // thread group dimension
+            u32 tx = shader->compute.thread_group_size[0];
+            u32 ty = shader->compute.thread_group_size[1];
+            u32 tz = shader->compute.thread_group_size[2];
+
+            u32 x = noise->desc.texture.width;
+            u32 y = noise->desc.texture.height;
+            u32 z = noise->desc.texture.depth;
+
+            cmd_list->dispatch((x+tx-1)/tx, (y+ty-1)/ty, (z+tz-1)/tz);
+        }
+        cmd_list->end();
+        dx12_execute_command_list(cmd_queue, cmd_list);
+        dx12_signal_fence(cmd_queue, fence);
+        dx12_wait_fence(fence);
+    }
+
+    // @Temporary
+    // @Temporary
+    DX12_Resource* weather_map = nullptr;
+    auto weather_map_srv = dx12_alloc_descriptor(srv_heap);
+    auto weather_map_uav = dx12_alloc_descriptor(srv_heap);
+    {
+        DX12_Resource_Desc desc = {
+            .type = DX12_RESOURCE_TYPE_TEXTURE_2D,
+            .resource_flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+            .texture = {
+                .format      = DXGI_FORMAT_R11G11B10_FLOAT,
+                .width       = 1024,
+                .height      = 1024,
+                .mip_levels  = 1,
+                .depth       = 1,
+                .num_samples = 1,
+            }
+        };
+        weather_map = dx12_alloc_resource(device, desc);
+        weather_map->native_resource->SetName(L"WeatherMap");
+
+        dx12_create_srv(device, weather_map, &weather_map_srv, weather_map->desc.texture.format);
+        dx12_create_uav(device, weather_map, &weather_map_uav, weather_map->desc.texture.format);
+
+        auto* shader = shader_table.at("WeatherMapGeneration");
+        cmd_list->begin();
+        {
+            cmd_list->set_resource_and_sampler_heap(srv_heap, sampler_heap);
+            cmd_list->set_pipeline_state(shader);
+            cmd_list->set_compute_root_signature(shader->compute.root_signature);
+
+            u32 texture_id = weather_map_uav.index;
+            cmd_list->set_compute_root_constants(0, 1, &texture_id);
+
+            // thread group dimension
+            u32 tx = shader->compute.thread_group_size[0];
+            u32 ty = shader->compute.thread_group_size[1];
+
+            u32 x = weather_map->desc.texture.width;
+            u32 y = weather_map->desc.texture.height;
+
+            cmd_list->dispatch((x+tx-1)/tx, (y+ty-1)/ty, 1);
+        }
+        cmd_list->end();
+        dx12_execute_command_list(cmd_queue, cmd_list);
+        dx12_signal_fence(cmd_queue, fence);
+        dx12_wait_fence(fence);
+    }
+
 
     // Alloc resources
     //
@@ -916,7 +1024,7 @@ int main()
     auto* gbuffer_pass = new GBuffer_Pass;
     {
         auto* pass = gbuffer_pass;
-        pass->pipeline_state  = shader_table["GBuffer"];
+        pass->pipeline_state  = shader_table.at("GBuffer");
         pass->viewport_width  = tex_width;
         pass->viewport_height = tex_height;
         pass->scissor_width   = tex_width;
@@ -933,7 +1041,7 @@ int main()
     auto* defer_pass = new Defer_Pass;
     {
         auto* pass = defer_pass;
-        pass->pipeline_state  = shader_table["Defer"];
+        pass->pipeline_state  = shader_table.at("Defer");
         pass->viewport_width  = tex_width;
         pass->viewport_height = tex_height;
         pass->scissor_width   = tex_width;
@@ -947,10 +1055,24 @@ int main()
         pass->outputs.push_back("Color");
     }
 
+    auto* cloud_pass = new Cloud_Pass;
+    {
+        auto* pass = cloud_pass;
+        pass->pipeline_state  = shader_table.at("Cloud");
+        pass->viewport_width  = tex_width;
+        pass->viewport_height = tex_height;
+        pass->scissor_width   = tex_width;
+        pass->scissor_height  = tex_height;
+        pass->topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+        pass->outputs.push_back("Color");
+        pass->depth_target = "Depth"; // @Fix: Why not working
+    }
+
     auto* composition_pass = new Composition_Pass;
     {
         auto* pass = composition_pass;
-        pass->pipeline_state  = shader_table["Composition"];
+        pass->pipeline_state  = shader_table.at("Composition");
         pass->viewport_width  = tex_width;
         pass->viewport_height = tex_height;
         pass->scissor_width   = tex_width;
@@ -965,7 +1087,7 @@ int main()
     auto* blit_pass = new Blit_Pass;
     {
         auto* pass = blit_pass;
-        pass->pipeline_state = shader_table["Blit"];
+        pass->pipeline_state = shader_table.at("Blit");
         pass->viewport_width  = tex_width;
         pass->viewport_height = tex_height;
         pass->scissor_width   = tex_width;
@@ -1033,7 +1155,7 @@ int main()
     //
     f32 bloom_threshold    = 1.0f;
     f32 bloom_radius_scale = 2.0f;
-    f32 bloom_strength     = 0.02f;
+    f32 bloom_strength     = 0.0f; //0.02f;
     u32 bloom_num_mips     = 5;
     for (u32 i = 0; i < bloom_num_mips; ++i) {
         const String name = "Bloom" + std::to_string(i);
@@ -1065,16 +1187,19 @@ int main()
         if (editor->show_ui) 
         {
             ImGui::Begin("Panel");
-            ImGui::Text("%.3f mspf (%.1f fps)", 1000.0f / io.Framerate, io.Framerate);
-            ImGui::SliderFloat("Bloom Threshold", &bloom_threshold, 0.0f, 32.0f);
-            ImGui::SliderFloat("Bloom Radius Scale", &bloom_radius_scale, 1.0f, 32.0f);
-            ImGui::SliderFloat("Bloom Strength", &bloom_strength, 0.0f, 1.0f);
+            {
+                ImGui::Text("%.3f mspf (%.1f fps)", 1000.0f / io.Framerate, io.Framerate);
+                ImGui::SliderFloat("Bloom Threshold", &bloom_threshold, 0.0f, 32.0f);
+                ImGui::SliderFloat("Bloom Radius Scale", &bloom_radius_scale, 1.0f, 32.0f);
+                ImGui::SliderFloat("Bloom Strength", &bloom_strength, 0.0f, 1.0f);
+            }
             ImGui::End();
 
             ui_main_menu_bar();
             ui_scene_hierarchy(editor, scene);
             ui_entity_property(editor, scene);
             ui_gizmo(editor, scene, camera.view, camera.proj, 0, 0, tex_width, tex_height);
+
         }
         ui_end();
 
@@ -1100,26 +1225,39 @@ int main()
             cmd_list->set_resource_and_sampler_heap(srv_heap, sampler_heap);
             cmd_list->set_graphics_root_signature(bindless_root_signature);
 
-
             {
                 gbuffer_pass->begin(resource_state, cmd_list);
                 gbuffer_pass->execute(resource_state, cmd_list, scene, transforms_srv.index, camera_srv.index, anisotropic_sampler_descriptor.index);
             }
 
-            {
+            //auto rtv = resource_state->get_pass_resource("Color").rtv;
+            //cmd_list->clear_rtv(&rtv, 0.3, 0.3, 0.9, 1.0);
+
+            if (0) {
                 Defer_Pass::Draw_Data param = {
                     .camera_id      = camera_srv.index,
-                    .linear_id      = linear_sampler_descriptor.index,
+                    .linear_id      = linear_wrap.index,
                     .anisotropic_id = anisotropic_sampler_descriptor.index,
                 };
                 defer_pass->begin(resource_state, cmd_list);
                 defer_pass->execute(resource_state, cmd_list, param);
             }
 
+            if (1) {
+                Cloud_Pass::Push_Constants push = {
+                    .camera_id      = camera_srv.index,
+                    .noise_id       = noise_srv.index,
+                    .weather_map_id = weather_map_srv.index,
+                    .linear_wrap_id = linear_wrap.index,
+                };
+                cloud_pass->begin(resource_state, cmd_list);
+                cloud_pass->execute(resource_state, cmd_list, push);
+            }
+
             // @Temporary:
             //
             {
-                auto* shader = shader_table["BloomThreshold"];
+                auto* shader = shader_table.at("BloomThreshold");
                 cmd_list->set_pipeline_state(shader);
                 cmd_list->set_compute_root_signature(shader->compute.root_signature);
 
@@ -1266,7 +1404,7 @@ int main()
             cmd_list->set_graphics_root_signature(bindless_root_signature);
             {
                 Blit_Pass::Draw_Data param = {
-                    .linear_id = linear_sampler_descriptor.index
+                    .linear_id = linear_wrap.index
                 };
                 blit_pass->begin(resource_state, cmd_list);
                 blit_pass->execute(resource_state, cmd_list, param);

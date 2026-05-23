@@ -1,0 +1,10 @@
+{
+    "pipeline" : "Graphics",
+    "name": "Cloud",
+    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader\\HLSL\\Cloud.hlsl",
+    "cull" : "none",
+    "render_targets" : [
+        "R11G11B10_FLOAT"
+    ],
+    "depth_format" : "D32"
+}

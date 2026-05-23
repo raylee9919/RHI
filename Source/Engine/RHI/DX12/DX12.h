@@ -129,6 +129,7 @@ namespace Engine
         DX12_RESOURCE_TYPE_INVALID = -1,
         DX12_RESOURCE_TYPE_BUFFER,
         DX12_RESOURCE_TYPE_TEXTURE_2D,
+        DX12_RESOURCE_TYPE_TEXTURE_3D,
     };
 
     struct DX12_Resource_Desc_Buffer {

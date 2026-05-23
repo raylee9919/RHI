@@ -639,6 +639,27 @@ namespace Engine
             if (SUCCEEDED(device->native_device->CreateCommittedResource(&heap_prop, desc.heap_flags, &res_desc, init_state, clear_value, IID_PPV_ARGS(&resource)))) {
                 ok = true;
             }
+        } else if (desc.type == DX12_RESOURCE_TYPE_TEXTURE_3D) {
+            auto tex = desc.texture;
+            res_desc = {
+                .Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE3D,
+                .Alignment        = 0, // @Todo: Correct?
+                .Width            = tex.width,
+                .Height           = tex.height,
+                .DepthOrArraySize = tex.depth,
+                .MipLevels        = tex.mip_levels,
+                .Format           = tex.format,
+                .SampleDesc       = {
+                    .Count   = tex.num_samples,
+                    .Quality = 0
+                },
+                .Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+                .Flags            = desc.resource_flags,
+            };
+
+            if (SUCCEEDED(device->native_device->CreateCommittedResource(&heap_prop, desc.heap_flags, &res_desc, init_state, clear_value, IID_PPV_ARGS(&resource)))) {
+                ok = true;
+            }
         } else {
             assert("invalid resource creation type.");
         }
@@ -908,6 +929,10 @@ namespace Engine
             auto tex = resource->desc.texture;
             auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::Tex2D(view_format, tex.mip_levels);
             device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
+        } else if (resource->desc.type == DX12_RESOURCE_TYPE_TEXTURE_3D) {
+            auto tex = resource->desc.texture;
+            auto srv_desc = CD3DX12_SHADER_RESOURCE_VIEW_DESC::Tex3D(view_format, tex.mip_levels);
+            device->native_device->CreateShaderResourceView(resource->native_resource, &srv_desc, descriptor->cpu_handle);
         } else {
             CORE_ASSERT(0);
         }
@@ -924,6 +949,11 @@ namespace Engine
             auto tex = resource->desc.texture;
             CORE_ASSERT(tex.mip_levels == 1); // @Temporary
             auto uav_desc = CD3DX12_UNORDERED_ACCESS_VIEW_DESC::Tex2D(view_format, 0);
+            device->native_device->CreateUnorderedAccessView(resource->native_resource, counter_resource, &uav_desc, descriptor->cpu_handle);
+        } else if (resource->desc.type == DX12_RESOURCE_TYPE_TEXTURE_3D) {
+            auto tex = resource->desc.texture;
+            CORE_ASSERT(tex.mip_levels == 1); // @Temporary
+            auto uav_desc = CD3DX12_UNORDERED_ACCESS_VIEW_DESC::Tex3D(view_format);
             device->native_device->CreateUnorderedAccessView(resource->native_resource, counter_resource, &uav_desc, descriptor->cpu_handle);
         } else {
             CORE_ASSERT(!"Unhandled type");

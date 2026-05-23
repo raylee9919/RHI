@@ -1,7 +1,8 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
-#define PUSH_CONSTANTS(Type, Name) ConstantBuffer<Type> Name : register(b0)
+// @Todo: Cleanup
 
+#define PUSH_CONSTANTS(Type, Name) ConstantBuffer<Type> Name : register(b0)
 struct Push_Constants {
     uint input_id;
     uint output_id;
@@ -9,28 +10,24 @@ struct Push_Constants {
 };
 PUSH_CONSTANTS(Push_Constants, push);
 
-float luminance(float3 c)
+float luma_from_rgb(float3 c)
 {
-    c = max(c, 0.0); // prevent negative HDR weirdness
-    return dot(c, float3(0.2126, 0.7152, 0.0722));
+    return dot(max(c, 0.0), float3(0.2126, 0.7152, 0.0722));
 }
 
 float karis_weight(float3 c)
 {
-    float l = luminance(c);
+    float l = luma_from_rgb(c);
 
     // guard against NaN/Inf
-    if (!isfinite(l))
-        l = 0.0;
+    if (!isfinite(l)) l = 0.0;
 
     return rcp(1.0 + l);
 }
 
 float3 sanitize(float3 c)
 {
-    return isfinite(c.x) && isfinite(c.y) && isfinite(c.z)
-        ? c
-        : 0.0;
+    return isfinite(c.x) && isfinite(c.y) && isfinite(c.z) ? c : 0.0;
 }
 
 float3 karis_average(float3 a, float3 b, float3 c, float3 d)

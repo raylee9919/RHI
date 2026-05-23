@@ -1,7 +1,7 @@
 {
     "pipeline" : "Graphics",
     "name": "GBuffer",
-    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader/HLSL/GBuffer.hlsl",
+    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader\\HLSL\\GBuffer.hlsl",
     "cull" : "back",
     "render_targets" : [
         "R32G32B32A32_FLOAT",

@@ -1,0 +1,5 @@
+{
+    "pipeline" : "Compute",
+    "name": "CloudNoise",
+    "shader": "C:/dev/swl/RHI/Project\\Asset\\Shader\\HLSL\\CloudNoise.hlsl"
+}

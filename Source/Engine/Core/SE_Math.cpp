@@ -619,4 +619,51 @@ namespace Engine
         v.z = degree.z * (PI / 180.0f);
         return v;
     }
+
+    m4x4 inverse(const m4x4& m) {
+        f32 A2323 = m.coef[2][2] * m.coef[3][3] - m.coef[2][3] * m.coef[3][2];
+        f32 A1323 = m.coef[2][1] * m.coef[3][3] - m.coef[2][3] * m.coef[3][1];
+        f32 A1223 = m.coef[2][1] * m.coef[3][2] - m.coef[2][2] * m.coef[3][1];
+        f32 A0323 = m.coef[2][0] * m.coef[3][3] - m.coef[2][3] * m.coef[3][0];
+        f32 A0223 = m.coef[2][0] * m.coef[3][2] - m.coef[2][2] * m.coef[3][0];
+        f32 A0123 = m.coef[2][0] * m.coef[3][1] - m.coef[2][1] * m.coef[3][0];
+        f32 A2313 = m.coef[1][2] * m.coef[3][3] - m.coef[1][3] * m.coef[3][2];
+        f32 A1313 = m.coef[1][1] * m.coef[3][3] - m.coef[1][3] * m.coef[3][1];
+        f32 A1213 = m.coef[1][1] * m.coef[3][2] - m.coef[1][2] * m.coef[3][1];
+        f32 A2312 = m.coef[1][2] * m.coef[2][3] - m.coef[1][3] * m.coef[2][2];
+        f32 A1312 = m.coef[1][1] * m.coef[2][3] - m.coef[1][3] * m.coef[2][1];
+        f32 A1212 = m.coef[1][1] * m.coef[2][2] - m.coef[1][2] * m.coef[2][1];
+        f32 A0313 = m.coef[1][0] * m.coef[3][3] - m.coef[1][3] * m.coef[3][0];
+        f32 A0213 = m.coef[1][0] * m.coef[3][2] - m.coef[1][2] * m.coef[3][0];
+        f32 A0312 = m.coef[1][0] * m.coef[2][3] - m.coef[1][3] * m.coef[2][0];
+        f32 A0212 = m.coef[1][0] * m.coef[2][2] - m.coef[1][2] * m.coef[2][0];
+        f32 A0113 = m.coef[1][0] * m.coef[3][1] - m.coef[1][1] * m.coef[3][0];
+        f32 A0112 = m.coef[1][0] * m.coef[2][1] - m.coef[1][1] * m.coef[2][0];
+
+        f32 det = (m.coef[0][0] * ( m.coef[1][1] * A2323 - m.coef[1][2] * A1323 + m.coef[1][3] * A1223 ) - 
+                   m.coef[0][1] * ( m.coef[1][0] * A2323 - m.coef[1][2] * A0323 + m.coef[1][3] * A0223 ) +
+                   m.coef[0][2] * ( m.coef[1][0] * A1323 - m.coef[1][1] * A0323 + m.coef[1][3] * A0123 ) -
+                   m.coef[0][3] * ( m.coef[1][0] * A1223 - m.coef[1][1] * A0223 + m.coef[1][2] * A0123 ));
+        det = 1.f / det;
+
+        m4x4 result;
+        result._11 = det *   ( m.coef[1][1] * A2323 - m.coef[1][2] * A1323 + m.coef[1][3] * A1223 );
+        result._12 = det * - ( m.coef[0][1] * A2323 - m.coef[0][2] * A1323 + m.coef[0][3] * A1223 );
+        result._13 = det *   ( m.coef[0][1] * A2313 - m.coef[0][2] * A1313 + m.coef[0][3] * A1213 );
+        result._14 = det * - ( m.coef[0][1] * A2312 - m.coef[0][2] * A1312 + m.coef[0][3] * A1212 );
+        result._21 = det * - ( m.coef[1][0] * A2323 - m.coef[1][2] * A0323 + m.coef[1][3] * A0223 );
+        result._22 = det *   ( m.coef[0][0] * A2323 - m.coef[0][2] * A0323 + m.coef[0][3] * A0223 );
+        result._23 = det * - ( m.coef[0][0] * A2313 - m.coef[0][2] * A0313 + m.coef[0][3] * A0213 );
+        result._24 = det *   ( m.coef[0][0] * A2312 - m.coef[0][2] * A0312 + m.coef[0][3] * A0212 );
+        result._31 = det *   ( m.coef[1][0] * A1323 - m.coef[1][1] * A0323 + m.coef[1][3] * A0123 );
+        result._32 = det * - ( m.coef[0][0] * A1323 - m.coef[0][1] * A0323 + m.coef[0][3] * A0123 );
+        result._33 = det *   ( m.coef[0][0] * A1313 - m.coef[0][1] * A0313 + m.coef[0][3] * A0113 );
+        result._34 = det * - ( m.coef[0][0] * A1312 - m.coef[0][1] * A0312 + m.coef[0][3] * A0112 );
+        result._41 = det * - ( m.coef[1][0] * A1223 - m.coef[1][1] * A0223 + m.coef[1][2] * A0123 );
+        result._42 = det *   ( m.coef[0][0] * A1223 - m.coef[0][1] * A0223 + m.coef[0][2] * A0123 );
+        result._43 = det * - ( m.coef[0][0] * A1213 - m.coef[0][1] * A0213 + m.coef[0][2] * A0113 );
+        result._44 = det *   ( m.coef[0][0] * A1212 - m.coef[0][1] * A0212 + m.coef[0][2] * A0112 );
+
+        return result;
+    }
 }
