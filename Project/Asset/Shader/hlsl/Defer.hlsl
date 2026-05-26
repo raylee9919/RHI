@@ -157,13 +157,13 @@ float3 ps_main(PS_Input input) : SV_TARGET
     if (emissive_id != 0xffffffff) {
         Texture2D <float4> emissive_texture = ResourceDescriptorHeap[NonUniformResourceIndex(emissive_id)];
         emissive = emissive_texture.Sample(anisotropic_sampler, uv).rgb;
-        emissive = pow(emissive, 2.2) * emissive_strength;
+        emissive *= emissive_strength;
     }
 
     // @Temporary: Debug light scene
     Point_Light lights[2];
     lights[0].position = float3(-2.0, 3.0, 0.0);
-    lights[0].radiance = 16.0;
+    lights[0].radiance = float3(24.0, 24.0, 24.0);
     lights[1].position = float3( 5.0, 1.0, 0.0);
     lights[1].radiance = float3(4.0, 2.0, 12.0);
 

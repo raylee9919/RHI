@@ -1,14 +1,11 @@
 // Copyright Seong Woo Lee. All Rights Reserved.
 
 #define PI              3.14159265
+#define TWO_PI          6.28318530
 #define NDC_DEPTH_MAX   1.0
 static const float  PLANET_RADIUS       = 6360e3;
 static const float  ATMOSPHERE_RADIUS   = 6420e3;
 static const float3 PLANET_CENTER       = float3(0.0, -PLANET_RADIUS, 0.0);
-static const float3 TO_SUN              = normalize(float3(-1.0, 1.0, 0.0));
-static const float3 SUN_RADIANCE        = float3(1.0, 1.0, 1.0) * 20;
-static const int NUM_SAMPLES_VIEW       = 16;
-static const int NUM_SAMPLES_SUN        = 8;
 
 struct Camera {
     float4   position;
@@ -27,6 +24,14 @@ struct Push_Constants {
     uint weather_map_id;
 
     uint linear_wrap_id;
+
+    float  sun_illuminance;
+    float3 sun_direction;
+    float  sun_angular_radius; // radian
+
+    int num_view_samples;
+    int num_sun_samples;
+    int num_cloud_samples;
 };
 PUSH_CONSTANTS(Push_Constants, push);
 
@@ -92,8 +97,15 @@ float3 ps_main(PS_Input input) : SV_TARGET
     Texture3D <float4> noise_tex   = ResourceDescriptorHeap[push.noise_id];
     Texture2D <float3> weather_map = ResourceDescriptorHeap[push.weather_map_id];
 
+    // Sun
+    float  sun_solid_angle           = TWO_PI * (1.0 - cos(push.sun_angular_radius));
+    float3 sun_illuminance           = push.sun_illuminance;
+    float3 sun_luminance             = sun_illuminance / sun_solid_angle;
+    float3 sun_transmittance         = float3(0.925, 0.861, 0.755);
+    float3 sun_outer_space_luminance = sun_luminance / sun_transmittance;
+
     // 
-    float3 to_light = TO_SUN;
+    float3 to_light = push.sun_direction;
     float3 camera_position = camera.position.xyz;
     float ndc_x =  2.0 * input.screen_uv.x - 1.0;
     float ndc_y = -2.0 * input.screen_uv.y + 1.0;
@@ -109,13 +121,12 @@ float3 ps_main(PS_Input input) : SV_TARGET
     }
     float dist = tmin < 0.0 ? tmax : tmin;
 
-    float step_size = dist / float(NUM_SAMPLES_VIEW + 1);
+    float step_size = dist / float(push.num_view_samples + 1);
     float3 dX       = step_size * view_dir;                 // Step
     float3 X        = camera_position + dX;                 // Sample position along view direction
-    float3 T        = 1.0;                                  // Transmittance
-    float3 L0       = SUN_RADIANCE;                         // Initial radiance
+    float3 L0       = sun_outer_space_luminance;            // Initial luminance
     float mu        = dot(view_dir, to_light);              // Cosine of view dir and light dir
-    float3 Sr       = float3(5.8e-6, 1.35e-5, 3.31e-5);     // Rayleigh scattering
+    float3 Sr       = float3(5.802e-6, 13.558e-6, 33.1e-6); // Rayleigh scattering
     float3 Sm       = 2.1e-5;                               // Mie scattering. @Todo: Change according to weather, pollution, etc.
     float Pr        = phase_rayleigh(mu);                   // Rayleigh phase function
     float Pm        = phase_mie(mu, 0.76);                  // Mie phase function
@@ -126,10 +137,13 @@ float3 ps_main(PS_Input input) : SV_TARGET
     float3 sum_r    = 0.0;
     float3 sum_m    = 0.0;
 
+    float3 T_view  = 0.0;
+
     [loop]
-    for (int i = 0; i < NUM_SAMPLES_VIEW; ++i) {
+    for (int i = 0; i < push.num_view_samples; ++i) {
         float h = altitude_of(X); // Altitude
 
+        // Sampled density
         float Hr = exp(-h / Dr) * step_size;
         float Hm = exp(-h / Dm) * step_size;
 
@@ -139,13 +153,13 @@ float3 ps_main(PS_Input input) : SV_TARGET
         float t0, t1;
         ray_sphere(X, to_light, PLANET_CENTER, ATMOSPHERE_RADIUS, t0, t1);
         float dist_L      = t1; // @Todo: Outer earth
-        float step_size_L = dist_L / float(NUM_SAMPLES_SUN + 1);
+        float step_size_L = dist_L / float(push.num_sun_samples + 1);
         float3 step_L     = step_size_L * to_light;
         float3 sample_L   = X + step_L;
         float ODr_L = 0;
         float ODm_L = 0;
 
-        for (int j = 0; j < NUM_SAMPLES_SUN; ++j) {
+        for (int j = 0; j < push.num_sun_samples; ++j) {
             float h_L = altitude_of(sample_L);
 
             ODr_L += exp(-h_L / Dr) * step_size_L;
@@ -154,14 +168,26 @@ float3 ps_main(PS_Input input) : SV_TARGET
             sample_L += step_L;
         }
 
-        float3 tau = Sr * (ODr + ODr_L) + Sm * 1.11 * (ODm + ODm_L);
+        float3 tau = (Sr * (ODr + ODr_L)) + (Sm * 1.11 * (ODm + ODm_L));
         float3 attenuation = exp(-tau);
         sum_r += attenuation * Hr;
         sum_m += attenuation * Hm;
 
         X += dX;
+
+        if (i == push.num_view_samples - 1) {
+            T_view = exp(-(ODr * Sr + ODm * Sm * 1.11));
+        }
     }
 
-    float3 L = L0 * ((sum_r * Sr * Pr) + (sum_m * Sm * Pm));
+    float3 L = L0;
+    L *= ((sum_r * Sr * Pr) + (sum_m * Sm * Pm));
+
+    // @Temporary
+    L += smoothstep(cos(push.sun_angular_radius), 1.0, dot(view_dir, to_light)) * 
+        sun_outer_space_luminance *
+        T_view;
+
+
     return L;
 }

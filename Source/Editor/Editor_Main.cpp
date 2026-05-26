@@ -356,7 +356,7 @@ INTERNAL Material material_from_json(DX12_Device* device, DX12_Command_Queue* cm
     auto [albedo_tex, albedo_id]     = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,   "albedo", DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, true, 0xffffffff);
     auto [orm_tex, orm_id]           = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,      "orm",      DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
     auto [normal_tex, normal_id]     = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json,   "normal",      DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
-    auto [emissive_tex, emissive_id] = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json, "emissive",      DXGI_FORMAT_R8G8B8A8_UNORM, true, 0xffffffff);
+    auto [emissive_tex, emissive_id] = alloc_resource_and_srv_and_return_id(device, cmd_queue, cmd_list, fence, srv_heap, json, "emissive", DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, true, 0xffffffff);
 
     mat.shader_material.albedo_id   = albedo_id;
     mat.shader_material.orm_id      = orm_id;
@@ -1165,6 +1165,21 @@ int main()
         resource_state->alloc_pass_resource(name, device, srv_heap, srv_heap, nullptr,  nullptr);
     }
 
+    // @Temporary: Atmosphere
+    //
+    ///f32 sun_illuminance    = 1.0e5;
+    f32 sun_illuminance    = 0.001;
+    f32 sun_azimuth        = 0.0f;
+    f32 sun_theta          = 0.0f;
+    // Unit: Degree.
+    // 0.527 ~ 0.545 angular diameter, depends on time of year.
+    // Interestingly, the sun is actually small.
+    f32 sun_angular_radius = 0.545f * 0.5f;
+    s32 num_view_samples  = 16;
+    s32 num_sun_samples   = 8;
+    s32 num_cloud_samples = 8;
+
+
 
 
     // Main loop
@@ -1189,6 +1204,16 @@ int main()
             ImGui::Begin("Panel");
             {
                 ImGui::Text("%.3f mspf (%.1f fps)", 1000.0f / io.Framerate, io.Framerate);
+
+                ImGui::SeparatorText("Atmosphere");
+                ImGui::SliderFloat("Sun Illuminance", &sun_illuminance, 5.0e4, 3.0e5);
+                ImGui::SliderFloat("Sun Theta", &sun_theta, 0.0f, 360.0f);
+                ImGui::SliderFloat("Sun Azimuth", &sun_azimuth, 0.0f, 180.0f);
+                ImGui::SliderInt("Number of view samples", &num_view_samples, 1, 128);
+                ImGui::SliderInt("Number of sun samples", &num_sun_samples, 1, 128);
+                ImGui::SliderInt("Number of cloud samples", &num_cloud_samples, 1, 128);
+
+                ImGui::SeparatorText("Bloom");
                 ImGui::SliderFloat("Bloom Threshold", &bloom_threshold, 0.0f, 32.0f);
                 ImGui::SliderFloat("Bloom Radius Scale", &bloom_radius_scale, 1.0f, 32.0f);
                 ImGui::SliderFloat("Bloom Strength", &bloom_strength, 0.0f, 1.0f);
@@ -1244,11 +1269,23 @@ int main()
             }
 
             if (1) {
+                float theta   = to_radian(sun_theta);
+                float azimuth = to_radian(sun_azimuth);
+                vec3 sun_direction = vec3(cos(theta) * sin(azimuth),
+                                          sin(theta),
+                                          cos(theta) * cos(azimuth));
+
                 Cloud_Pass::Push_Constants push = {
-                    .camera_id      = camera_srv.index,
-                    .noise_id       = noise_srv.index,
-                    .weather_map_id = weather_map_srv.index,
-                    .linear_wrap_id = linear_wrap.index,
+                    .camera_id          = camera_srv.index,
+                    .noise_id           = noise_srv.index,
+                    .weather_map_id     = weather_map_srv.index,
+                    .linear_wrap_id     = linear_wrap.index,
+                    .sun_illuminance    = sun_illuminance,
+                    .sun_direction      = sun_direction,
+                    .sun_angular_radius = to_radian(sun_angular_radius),
+                    .num_view_samples   = num_view_samples,
+                    .num_sun_samples    = num_sun_samples,
+                    .num_cloud_samples  = num_cloud_samples
                 };
                 cloud_pass->begin(resource_state, cmd_list);
                 cloud_pass->execute(resource_state, cmd_list, push);

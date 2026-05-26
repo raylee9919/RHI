@@ -13,18 +13,24 @@ struct Push_Constants {
 };
 PUSH_CONSTANTS(Push_Constants, push);
 
-float3 tonemap_aces(float3 x) {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-
-    return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
-}
-
 float3 tonemap_reinhard(float3 x) {
     return x / (x + 1.0f);
+}
+
+float3 tonemap_aces(float3 x) {
+    float a = 2.51;
+    float b = 0.03;
+    float c = 2.43;
+    float d = 0.59;
+    float e = 0.14;
+    return saturate((x*(a*x+b))/(x*(c*x+d)+e));
+}
+
+float3 linear_to_srgb(float3 c) {
+    float3 lo = c * 12.92;
+    float3 hi = (pow(abs(c), 1.0/2.4) * 1.055) - 0.055;
+    float3 srgb = select(c <= 0.0031308, lo, hi);
+    return srgb;
 }
 
 PS_Input vs_main(uint vertex_id : SV_VertexID)
@@ -48,11 +54,10 @@ float4 ps_main(PS_Input input) : SV_TARGET
     float3 color = color_texture.Sample(linear_sampler, input.screen_uv);
 
     // Tone mapping.
-    color = tonemap_reinhard(color);
+    color = tonemap_aces(color);
 
-
-    // @Todo: Correct gamma correction?
-    color = pow(color, 1.0 / 2.2);
+    // Accurate gamma correction
+    color = linear_to_srgb(color);
 
     float4 result = float4(color, 1.0);
     return result;
