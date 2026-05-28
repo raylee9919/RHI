@@ -1155,7 +1155,7 @@ int main()
     //
     f32 bloom_threshold    = 1.0f;
     f32 bloom_radius_scale = 2.0f;
-    f32 bloom_strength     = 0.0f; //0.02f;
+    f32 bloom_strength     = 0.0f;
     u32 bloom_num_mips     = 5;
     for (u32 i = 0; i < bloom_num_mips; ++i) {
         const String name = "Bloom" + std::to_string(i);
@@ -1167,10 +1167,11 @@ int main()
 
     // @Temporary: Atmosphere
     //
-    ///f32 sun_illuminance    = 1.0e5;
-    f32 sun_illuminance    = 0.001;
-    f32 sun_azimuth        = 0.0f;
-    f32 sun_theta          = 0.0f;
+    f32 sun_illuminance = 1.0e5;
+    vec3 sun_color_linear = vec3(1.0f, 1.0f, 1.0f);
+    //f32 sun_illuminance = 0.01f;
+    f32 sun_azimuth     = 0.0f;
+    f32 sun_theta       = 45.0f;
     // Unit: Degree.
     // 0.527 ~ 0.545 angular diameter, depends on time of year.
     // Interestingly, the sun is actually small.
@@ -1178,6 +1179,9 @@ int main()
     s32 num_view_samples  = 16;
     s32 num_sun_samples   = 8;
     s32 num_cloud_samples = 8;
+
+    // @Temporary
+    f32 shader_time = 0.0f;
 
 
 
@@ -1193,6 +1197,7 @@ int main()
         for (;time_elapsed >= dt; time_elapsed -= dt) {
             camera.update(dt, window->my_input_system);
         }
+        shader_time += dt;
 
         // UI
         if (window->my_input_system->key_is_down[KEY_F1] && !window->my_input_system->key_was_down[KEY_F1]) {
@@ -1206,17 +1211,22 @@ int main()
                 ImGui::Text("%.3f mspf (%.1f fps)", 1000.0f / io.Framerate, io.Framerate);
 
                 ImGui::SeparatorText("Atmosphere");
-                ImGui::SliderFloat("Sun Illuminance", &sun_illuminance, 5.0e4, 3.0e5);
-                ImGui::SliderFloat("Sun Theta", &sun_theta, 0.0f, 360.0f);
-                ImGui::SliderFloat("Sun Azimuth", &sun_azimuth, 0.0f, 180.0f);
-                ImGui::SliderInt("Number of view samples", &num_view_samples, 1, 128);
-                ImGui::SliderInt("Number of sun samples", &num_sun_samples, 1, 128);
-                ImGui::SliderInt("Number of cloud samples", &num_cloud_samples, 1, 128);
+                {
+                    ImGui::SliderFloat("Sun Illuminance (Lumen)", &sun_illuminance, 5.0e4, 3.0e5, "%.f lm");
+                    ImGui::SliderFloat3("Sun Color (RGB Linear)", &sun_color_linear.x, 0.0f, 1.0f);
+                    ImGui::SliderFloat("Sun Theta", &sun_theta, -180.0f, 180.0f);
+                    ImGui::SliderFloat("Sun Azimuth", &sun_azimuth, 0.0f, 180.0f);
+                    ImGui::SliderInt("Number of view samples", &num_view_samples, 1, 128);
+                    ImGui::SliderInt("Number of sun samples", &num_sun_samples, 1, 128);
+                    ImGui::SliderInt("Number of cloud samples", &num_cloud_samples, 1, 128);
+                }
 
                 ImGui::SeparatorText("Bloom");
-                ImGui::SliderFloat("Bloom Threshold", &bloom_threshold, 0.0f, 32.0f);
-                ImGui::SliderFloat("Bloom Radius Scale", &bloom_radius_scale, 1.0f, 32.0f);
-                ImGui::SliderFloat("Bloom Strength", &bloom_strength, 0.0f, 1.0f);
+                {
+                    ImGui::SliderFloat("Bloom Threshold", &bloom_threshold, 0.0f, 32.0f);
+                    ImGui::SliderFloat("Bloom Radius Scale", &bloom_radius_scale, 1.0f, 32.0f);
+                    ImGui::SliderFloat("Bloom Strength", &bloom_strength, 0.0f, 1.0f);
+                }
             }
             ImGui::End();
 
@@ -1277,12 +1287,17 @@ int main()
 
                 Cloud_Pass::Push_Constants push = {
                     .camera_id          = camera_srv.index,
+
                     .noise_id           = noise_srv.index,
                     .weather_map_id     = weather_map_srv.index,
+
                     .linear_wrap_id     = linear_wrap.index,
+
                     .sun_illuminance    = sun_illuminance,
+                    .sun_color_linear   = sun_color_linear,
                     .sun_direction      = sun_direction,
                     .sun_angular_radius = to_radian(sun_angular_radius),
+
                     .num_view_samples   = num_view_samples,
                     .num_sun_samples    = num_sun_samples,
                     .num_cloud_samples  = num_cloud_samples

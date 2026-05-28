@@ -19,6 +19,7 @@ namespace Engine
             u32 linear_wrap_id;
 
             f32  sun_illuminance;
+            vec3 sun_color_linear;
             vec3 sun_direction;
             f32  sun_angular_radius;
 

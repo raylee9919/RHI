@@ -26,6 +26,7 @@ struct Push_Constants {
     uint linear_wrap_id;
 
     float  sun_illuminance;
+    float3 sun_color_linear;
     float3 sun_direction;
     float  sun_angular_radius; // radian
 
@@ -39,6 +40,15 @@ struct PS_Input {
     float4 sv_position : SV_POSITION;
     float2 screen_uv   : TEXCOORD0;
 };
+
+float compute_EV100(float aperture, float shutter_time, float ISO) {
+    return log2(aperture * aperture / shutter_time * 100 / ISO);
+}
+
+float exposure_from_EV100(float EV100) {
+    float max_luminance = 1.2 * pow(2.0, EV100);
+    return 1.0 / max_luminance;
+}
 
 bool ray_sphere(float3 ray_origin, float3 ray_dir, 
                 float3 center, float radius, 
@@ -103,6 +113,7 @@ float3 ps_main(PS_Input input) : SV_TARGET
     float3 sun_luminance             = sun_illuminance / sun_solid_angle;
     float3 sun_transmittance         = float3(0.925, 0.861, 0.755);
     float3 sun_outer_space_luminance = sun_luminance / sun_transmittance;
+    sun_outer_space_luminance /= 683.0;
 
     // 
     float3 to_light = push.sun_direction;
@@ -137,7 +148,7 @@ float3 ps_main(PS_Input input) : SV_TARGET
     float3 sum_r    = 0.0;
     float3 sum_m    = 0.0;
 
-    float3 T_view  = 0.0;
+    float3 T_view  = 1.0;
 
     [loop]
     for (int i = 0; i < push.num_view_samples; ++i) {
@@ -181,13 +192,19 @@ float3 ps_main(PS_Input input) : SV_TARGET
     }
 
     float3 L = L0;
-    L *= ((sum_r * Sr * Pr) + (sum_m * Sm * Pm));
+    float3 T = ((sum_r * Sr * Pr) + (sum_m * Sm * Pm));
+    L *= T;
 
-    // @Temporary
+    // @Temporary: Sun disk
     L += smoothstep(cos(push.sun_angular_radius), 1.0, dot(view_dir, to_light)) * 
         sun_outer_space_luminance *
         T_view;
 
+    // Our light buffer being FLOAT16 is the reason why we are multiplying 
+    // exposure here to prevent overflow.
+    float EV100    = compute_EV100(16, 1.0/125.0, 100.0);
+    float exposure = exposure_from_EV100(EV100);
+    L *= exposure;
 
-    return L;
+    return L * push.sun_color_linear;
 }
