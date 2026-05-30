@@ -33,7 +33,7 @@ float3 tonemap_jodie_reinhard(float3 c) {
     return lerp(c / (l + 1.0), tc, tc);
 }
 
-float3 linear_to_srgb(float3 c) {
+float3 srgb_from_linear(float3 c) {
     float3 lo = c * 12.92;
     float3 hi = (pow(abs(c), 1.0/2.4) * 1.055) - 0.055;
     float3 srgb = select(c <= 0.0031308, lo, hi);
@@ -64,7 +64,7 @@ float4 ps_main(PS_Input input) : SV_TARGET
     color = tonemap_reinhard(color);
 
     // Accurate gamma correction
-    color = linear_to_srgb(color);
+    color = srgb_from_linear(color);
 
     float4 result = float4(color, 1.0);
     return result;

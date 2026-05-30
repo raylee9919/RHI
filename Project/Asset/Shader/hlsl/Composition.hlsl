@@ -14,7 +14,6 @@ struct PS_Input {
     float2 uv          : TEXCOORD0;
 };
 
-
 PS_Input vs_main(uint vertex_id : SV_VertexID)
 {
     PS_Input result;

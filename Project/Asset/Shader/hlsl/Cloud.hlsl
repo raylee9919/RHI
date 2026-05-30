@@ -103,17 +103,18 @@ float3 ps_main(PS_Input input) : SV_TARGET
     Camera camera = camera_buffer[0];
     
     // Pull sampler and textures.
-    SamplerState linear_wrap = SamplerDescriptorHeap[push.linear_wrap_id];
+    SamplerState linear_wrap       = SamplerDescriptorHeap[push.linear_wrap_id];
     Texture3D <float4> noise_tex   = ResourceDescriptorHeap[push.noise_id];
     Texture2D <float3> weather_map = ResourceDescriptorHeap[push.weather_map_id];
 
     // Sun
+    //float  rcp_max_luminous_efficacy = 1.0 / 683.002;
     float  sun_solid_angle           = TWO_PI * (1.0 - cos(push.sun_angular_radius));
     float3 sun_illuminance           = push.sun_illuminance;
     float3 sun_luminance             = sun_illuminance / sun_solid_angle;
     float3 sun_transmittance         = float3(0.925, 0.861, 0.755);
-    float3 sun_outer_space_luminance = sun_luminance / sun_transmittance;
-    sun_outer_space_luminance /= 683.0;
+    //float3 sun_outer_radiosity       = (sun_luminance / sun_transmittance) * rcp_max_luminous_efficacy;
+    float3 sun_outer_luminance       = (sun_luminance / sun_transmittance);
 
     // 
     float3 to_light = push.sun_direction;
@@ -135,7 +136,7 @@ float3 ps_main(PS_Input input) : SV_TARGET
     float step_size = dist / float(push.num_view_samples + 1);
     float3 dX       = step_size * view_dir;                 // Step
     float3 X        = camera_position + dX;                 // Sample position along view direction
-    float3 L0       = sun_outer_space_luminance;            // Initial luminance
+    float3 L0       = sun_outer_luminance;                  // Initial luminance
     float mu        = dot(view_dir, to_light);              // Cosine of view dir and light dir
     float3 Sr       = float3(5.802e-6, 13.558e-6, 33.1e-6); // Rayleigh scattering
     float3 Sm       = 2.1e-5;                               // Mie scattering. @Todo: Change according to weather, pollution, etc.
@@ -196,9 +197,7 @@ float3 ps_main(PS_Input input) : SV_TARGET
     L *= T;
 
     // @Temporary: Sun disk
-    L += smoothstep(cos(push.sun_angular_radius), 1.0, dot(view_dir, to_light)) * 
-        sun_outer_space_luminance *
-        T_view;
+    L += smoothstep(cos(push.sun_angular_radius), 1.0, dot(view_dir, to_light)) * L0 * T_view;
 
     // Our light buffer being FLOAT16 is the reason why we are multiplying 
     // exposure here to prevent overflow.
@@ -206,5 +205,5 @@ float3 ps_main(PS_Input input) : SV_TARGET
     float exposure = exposure_from_EV100(EV100);
     L *= exposure;
 
-    return L * push.sun_color_linear;
+    return L;
 }

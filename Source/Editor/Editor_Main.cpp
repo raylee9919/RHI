@@ -1167,7 +1167,7 @@ int main()
 
     // @Temporary: Atmosphere
     //
-    f32 sun_illuminance = 1.0e5;
+    f32 sun_illuminance = 1.2e5;
     vec3 sun_color_linear = vec3(1.0f, 1.0f, 1.0f);
     //f32 sun_illuminance = 0.01f;
     f32 sun_azimuth     = 0.0f;
@@ -1212,7 +1212,7 @@ int main()
 
                 ImGui::SeparatorText("Atmosphere");
                 {
-                    ImGui::SliderFloat("Sun Illuminance (Lumen)", &sun_illuminance, 5.0e4, 3.0e5, "%.f lm");
+                    ImGui::SliderFloat("Sun Illuminance", &sun_illuminance, 5.0e4, 3.0e5, "%.f lux");
                     ImGui::SliderFloat3("Sun Color (RGB Linear)", &sun_color_linear.x, 0.0f, 1.0f);
                     ImGui::SliderFloat("Sun Theta", &sun_theta, -180.0f, 180.0f);
                     ImGui::SliderFloat("Sun Azimuth", &sun_azimuth, 0.0f, 180.0f);
